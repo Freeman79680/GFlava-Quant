@@ -1635,11 +1635,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .action-summary { color: var(--muted); font-size: 0.84rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .action-summary b { color: var(--text); font-weight: 600; }
   .action-bar #runBtn { width: auto; min-width: 250px; padding: 13px 30px; flex: none; font-size: 0.96rem; }
+  .action-progress {
+    display: none; flex-direction: column; gap: 4px; flex: 1 1 220px; max-width: 320px; min-width: 160px;
+  }
+  .action-progress .progress-outer { margin: 0; }
+  .action-progress .job-drawer-timer { margin-top: 0; }
 
   /* -- Fly-out-Fenster fuer den laufenden Job, unter der Kopfzeile rechts -- */
   .job-drawer {
-    position: fixed; top: 84px; right: 24px; width: 400px; max-width: calc(100vw - 32px);
-    max-height: calc(100vh - 190px); overflow-y: auto; overflow-x: hidden; z-index: 50;
+    position: fixed; top: 84px; right: 24px; width: 400px; height: 360px;
+    min-width: 300px; min-height: 180px;
+    max-width: calc(100vw - 32px); max-height: calc(100vh - 110px);
+    display: flex; flex-direction: column; overflow: hidden; z-index: 50;
     background: var(--panel); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 22px; box-sizing: border-box;
     box-shadow: 0 24px 64px -16px rgba(0,0,0,.65), var(--shadow);
@@ -1651,8 +1658,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     background: linear-gradient(90deg, var(--accent), var(--accent2));
   }
   .job-drawer.open { transform: translateX(0) scale(1); opacity: 1; pointer-events: auto; }
-  .job-drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
-  .job-drawer-status { font-size: 0.95rem; font-weight: 600; }
+  .job-drawer.no-anim { transition: none; }
+  .job-drawer-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    margin-bottom: 6px; flex: none; cursor: move; user-select: none;
+  }
+  .job-drawer-header-text { min-width: 0; flex: 1 1 auto; }
+  .job-drawer-header .icon-btn { flex: none; cursor: pointer; }
+  .job-drawer-status { font-size: 0.95rem; font-weight: 600; overflow-wrap: anywhere; word-break: break-word; }
   .job-drawer-status.status-running { color: var(--accent-bright); }
   .job-drawer-status.status-done { color: var(--success); }
   .job-drawer-status.status-error { color: var(--error); }
@@ -1660,6 +1673,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     color: var(--muted); font-size: 0.78rem; margin-top: 2px;
     font-family: "Cascadia Mono", Consolas, monospace;
   }
+  .job-drawer #log { flex: 1 1 auto; height: auto; min-height: 60px; }
+  #jobLogLink { flex: none; }
+  .job-drawer-resize-handle {
+    position: absolute; right: 3px; bottom: 3px; width: 18px; height: 18px;
+    cursor: nwse-resize; opacity: .45; z-index: 2;
+  }
+  .job-drawer-resize-handle:hover { opacity: .9; }
+  .job-drawer-resize-handle::before {
+    content: ''; position: absolute; right: 3px; bottom: 3px; width: 9px; height: 9px;
+    border-right: 2px solid var(--muted-soft); border-bottom: 2px solid var(--muted-soft);
+  }
+  body.drawer-noselect { user-select: none; }
   .drawer-reopen-pill {
     position: fixed; top: 84px; right: 24px; z-index: 49;
     display: none; align-items: center; gap: 9px;
@@ -1736,9 +1761,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     .card { padding: 22px 20px; }
     .action-bar-inner { padding: 12px 18px; flex-direction: column; align-items: stretch; gap: 10px; }
     .action-summary { text-align: center; white-space: normal; }
+    .action-progress { max-width: 100%; }
     .action-bar #runBtn { width: 100%; }
     .job-drawer, .drawer-reopen-pill { left: 16px; right: 16px; top: 76px; width: auto; }
-    .job-drawer { max-height: calc(100vh - 240px); }
+    .job-drawer { max-height: calc(100vh - 240px); height: auto; }
+    .job-drawer-resize-handle { display: none; }
+    .job-drawer-header { cursor: default; }
     .drawer-reopen-pill { justify-content: center; }
     .modal { padding: 22px 20px 24px; }
     .modal-overlay { padding: 24px 14px; }
@@ -1889,21 +1917,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <div class="action-bar">
   <div class="action-bar-inner">
     <div class="action-summary" id="actionSummary"></div>
+    <div class="action-progress" id="actionProgress">
+      <div class="progress-outer"><div class="progress-inner" id="progressBar"></div></div>
+      <div id="drawerTimer" class="job-drawer-timer"></div>
+    </div>
     <button id="runBtn" data-i18n="runBtn"></button>
   </div>
 </div>
 
 <div class="job-drawer" id="jobDrawer">
-  <div class="job-drawer-header">
-    <div>
+  <div class="job-drawer-header" id="jobDrawerHeader">
+    <div class="job-drawer-header-text">
       <div id="drawerStatusLine" class="job-drawer-status"></div>
-      <div id="drawerTimer" class="job-drawer-timer"></div>
     </div>
     <button type="button" class="secondary icon-btn" id="drawerCloseBtn" data-i18n-title="minimizeTitle">&times;</button>
   </div>
   <div id="jobLogLink" class="hint"></div>
-  <div class="progress-outer"><div class="progress-inner" id="progressBar"></div></div>
   <div id="log"></div>
+  <div class="job-drawer-resize-handle" id="jobDrawerResizeHandle"></div>
 </div>
 <button type="button" class="drawer-reopen-pill" id="drawerReopenBtn">
   <span class="dot"></span><span id="drawerReopenText"></span>
@@ -3039,6 +3070,7 @@ async function startJob() {
 
   document.getElementById('log').textContent = '';
   document.getElementById('jobLogLink').style.display = 'none';
+  document.getElementById('actionProgress').style.display = 'flex';
   const bar = document.getElementById('progressBar');
   bar.style.width = '0%';
   bar.classList.add('running');
@@ -3236,6 +3268,70 @@ modelSearchEl.addEventListener('blur', () => {
 });
 document.getElementById('drawerCloseBtn').addEventListener('click', minimizeDrawer);
 document.getElementById('drawerReopenBtn').addEventListener('click', openDrawer);
+
+(function setupJobDrawerDragAndResize() {
+  const drawer = document.getElementById('jobDrawer');
+  const header = document.getElementById('jobDrawerHeader');
+  const handle = document.getElementById('jobDrawerResizeHandle');
+
+  function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+
+  let dragging = false, dragStartX = 0, dragStartY = 0, dragStartLeft = 0, dragStartTop = 0;
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('#drawerCloseBtn')) return;
+    dragging = true;
+    const rect = drawer.getBoundingClientRect();
+    drawer.style.left = rect.left + 'px';
+    drawer.style.top = rect.top + 'px';
+    drawer.style.right = 'auto';
+    drawer.classList.add('no-anim');
+    document.body.classList.add('drawer-noselect');
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragStartLeft = rect.left; dragStartTop = rect.top;
+    e.preventDefault();
+  });
+
+  let resizing = false, resizeStartX = 0, resizeStartY = 0, resizeStartW = 0, resizeStartH = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    resizing = true;
+    const rect = drawer.getBoundingClientRect();
+    resizeStartX = e.clientX; resizeStartY = e.clientY;
+    resizeStartW = rect.width; resizeStartH = rect.height;
+    drawer.classList.add('no-anim');
+    document.body.classList.add('drawer-noselect');
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (dragging) {
+      const dx = e.clientX - dragStartX, dy = e.clientY - dragStartY;
+      const maxLeft = Math.max(window.innerWidth - drawer.offsetWidth, 0);
+      const maxTop = Math.max(window.innerHeight - drawer.offsetHeight, 0);
+      drawer.style.left = clamp(dragStartLeft + dx, 0, maxLeft) + 'px';
+      drawer.style.top = clamp(dragStartTop + dy, 0, maxTop) + 'px';
+    } else if (resizing) {
+      const dx = e.clientX - resizeStartX, dy = e.clientY - resizeStartY;
+      const rect = drawer.getBoundingClientRect();
+      const maxW = window.innerWidth - rect.left - 12;
+      const maxH = window.innerHeight - rect.top - 12;
+      drawer.style.maxWidth = 'none';
+      drawer.style.maxHeight = 'none';
+      drawer.style.width = clamp(resizeStartW + dx, 300, maxW) + 'px';
+      drawer.style.height = clamp(resizeStartH + dy, 180, maxH) + 'px';
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (dragging || resizing) {
+      dragging = false; resizing = false;
+      drawer.classList.remove('no-anim');
+      document.body.classList.remove('drawer-noselect');
+    }
+  });
+})();
 
 applyTheme();
 document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
