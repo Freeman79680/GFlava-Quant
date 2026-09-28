@@ -1,0 +1,18 @@
+# Generated at runtime, machine/personal-specific -- regenerated automatically
+config.json
+start_server_config.txt
+logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local backups / packaging artifacts
+*.zip
+
+# Personal working notes, not part of the published tool
+PROJECT_SUMMARY.md
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
