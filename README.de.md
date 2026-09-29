@@ -5,10 +5,11 @@
 Eine kleine Oberflaeche im Browser fuer das, was wir bisher per PowerShell
 gemacht haben: bf16-Modell auswaehlen, Format waehlen, quantisieren lassen.
 Oben rechts: Sprachmenue (Deutsch/English, komplette Oberflaeche wird
-uebersetzt), ein Dark-/Light-Mode-Umschalter -- beides wird im Browser
-gespeichert (localStorage) und bleibt bei einem Neuladen erhalten -- und ein
-Zahnrad fuer die Einstellungen (Modell-Ordner, ComfyUI-Pfad, Systemcheck,
-siehe unten).
+uebersetzt), ein Dark-/Light-Mode-Umschalter, ein Zahnrad fuer die
+Einstellungen (Modell-Ordner, ComfyUI-Pfad, Systemcheck, siehe unten; klappt
+als Dropdown auf) und ein Schalter fuer ein **Minimal-Design** (keine
+Verlaeufe, nur eine Akzentfarbe). Sprache, Theme und Minimal-Design werden im
+Browser gespeichert (localStorage) und bleiben bei einem Neuladen erhalten.
 
 **Wichtig:** Das ist eine *lokale* Anwendung, kein Hosting-Dienst. Sie laeuft
 nur auf deinem eigenen PC, liest/schreibt nur Dateien auf deinem PC und ruft
@@ -61,15 +62,14 @@ hast:
 
 1. **Modell auswaehlen**: Dropdown mit allen `.safetensors`-Dateien aus den
    Modell-Ordnern, die unter dem Zahnrad-Symbol oben rechts ("Einstellungen")
-   eingetragen sind. Beim allerersten Start sind das drei Standard-Ordner
-   (`E:\_LLM\_ComfyOutput\diffusion_models`,
-   `E:\_LLM\_Modele\comfyui_models\models\diffusion_models`,
-   `E:\_LLM\_Modele\comfyui_models\models\StableDiffusion`), danach kannst du
-   dort beliebige eigene Ordner hinzufuegen, umbenennen oder entfernen --
-   ueber "Durchsuchen" oeffnet sich ein echter Windows-Ordnerdialog (der
+   eingetragen sind. Beim allerersten Start ist die Liste leer und die
+   Einstellungen oeffnen sich automatisch mit einem Hinweis -- dort kannst du
+   beliebige eigene Ordner hinzufuegen oder entfernen (der Anzeigename ergibt
+   sich aus dem Ordnernamen). Beim Hinzufuegen oeffnet sich ein echter
+   Windows-Ordnerdialog (der
    Server steuert dafuer kurz ein natives Auswahlfenster an, da ein
    normales `<input type=file>` aus Sicherheitsgruenden keinen echten
-   Dateisystempfad verraet) oder per Texteingabe. Jede Aenderung wird
+   Dateisystempfad verraet). Jede Aenderung wird
    dauerhaft in `config.json` neben `quant_server.py` gespeichert und ist
    beim naechsten Start automatisch wieder vorausgewaehlt. Jede
    Modell-Option zeigt Unterordner, Dateiname und Groesse, gruppiert nach
@@ -144,11 +144,17 @@ hast:
    Streaming-Overhead schneller verarbeitet. Die tatsaechlich gemessenen
    Werte und die Entscheidung stehen im Log jedes Laufs; ueber "Immer an"/
    "Immer aus" laesst sich das Flag auch manuell erzwingen.
-7. **Quantisieren starten** klicken. Ein Fly-out-Fenster oeffnet sich mit
-   Status, Dauer, Fortschrittsbalken und Live-Log, bis der Job fertig ist
-   oder ein Fehler auftritt. Ueber das &times; kannst du es minimieren --
-   der Job laeuft im Hintergrund weiter, eine kleine Pille unten rechts
-   zeigt den aktuellen Status und oeffnet das Fenster per Klick wieder.
+7. **Quantisieren starten** klicken. Mittig oeffnet sich ein Fenster
+   (1000&times;500, verschieb- und vergroesserbar) mit Status und Live-Log;
+   Fortschrittsbalken und Dauer stehen in der Leiste unten. Ueber das &times;
+   kannst du es minimieren -- der Job laeuft im Hintergrund weiter, eine
+   kleine Pille oben rechts zeigt den Status und oeffnet das Fenster per
+   Klick wieder.
+8. **Abbrechen**: Solange ein Job laeuft, gibt es im Fenster und in der
+   unteren Leiste einen "Abbrechen"-Knopf. Er beendet ctq samt seinem
+   Python-Unterprozess (sonst wuerde die GPU weiterrechnen) und loescht eine
+   unvollstaendige Ausgabedatei -- aber nur, wenn sie vor dem Start noch
+   nicht existierte.
 
 Bei `INT8 ConvRot` und `INT8 Tensor-Wise` laeuft danach automatisch der
 Marker-Fix (kuerzt die `.comfy_quant`-Marker auf genau die Felder, die
@@ -209,3 +215,12 @@ Datei kannst du auch von Hand bearbeiten oder sichern.
   werden zwischen zwei Server-Neustarts nicht gespeichert -- nur die
   Logs unter `logs/` sowie die Einstellungen in `config.json` bleiben
   dauerhaft erhalten.
+
+## Schriftarten
+
+Die Oberflaeche nutzt [Space Grotesk](https://github.com/floriankarsten/space-grotesk),
+[IBM Plex Sans](https://github.com/IBM/plex) und
+[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono). Sie liegen unter
+`fonts/` und werden lokal ausgeliefert -- die Seite laedt nichts aus dem
+Internet. Alle drei stehen unter der SIL Open Font License 1.1, siehe
+`fonts/OFL.txt`.

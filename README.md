@@ -66,21 +66,30 @@ that runs only on `127.0.0.1` — nothing leaves your machine.
 - **Persistent, per-job logs.** Every run's full command and output is
   saved to `logs/` and stays there across server restarts, browsable from
   the UI.
-- **Live progress drawer** with status, duration, progress bar and
-  streaming log while a job runs; minimizes to a small status pill so you
-  can keep working.
-- **Configurable model folders, no hardcoding.** Add, rename or remove
-  scanned folders from Settings using real native Windows folder/file
+- **Live job window** that opens centered (1000×500, draggable and
+  resizable) with status and streaming log; progress bar and elapsed time
+  sit in the bottom bar. Minimizes to a small status pill so you can keep
+  working.
+- **Cancel a running job.** Stops `ctq` together with its Python child
+  process (otherwise the GPU would keep working) and removes the incomplete
+  output file — but only if that file didn't exist before the job started.
+- **Configurable model folders, no hardcoding.** Add or remove scanned
+  folders from the Settings dropdown using real native Windows folder/file
   dialogs (not a custom in-app browser) — saved to `config.json`, reloaded
-  automatically on the next start. Includes real-time search across all
+  automatically on the next start. On first launch the list is empty and
+  Settings opens with a short hint. Includes real-time search across all
   configured folders.
 - **System check.** Verifies whether `ctq` is installed and up to date
   (compares against PyPI), and whether the optional
   [ComfyUI-INT8-Fast](https://github.com/BobJohnson24/ComfyUI-INT8-Fast)
   custom node is installed and current (compares local vs. remote git
   revision) — with one-click install/update buttons.
-- **Dark/light theme and German/English UI**, both persisted in the
-  browser and switched without a page reload.
+- **Dark/light theme, minimal design mode and German/English UI**, all
+  persisted in the browser and switched without a page reload. The minimal
+  mode drops every gradient and uses a single accent color.
+- **Fully local, including fonts.** Space Grotesk, IBM Plex Sans and
+  JetBrains Mono are bundled under `fonts/` — the page makes no requests to
+  the internet.
 - **One-click launcher** (`start_server.bat`): finds `python.exe` and
   `quant_server.py` automatically (or lets you pick them via a native file
   dialog), remembers the choice per machine, and offers to install `flask`
@@ -131,9 +140,10 @@ python.exe quant_server.py
    ctq's own description of what each preset keeps at full precision.
 4. **(Optional) Advanced**: extra raw ctq arguments, and the low-memory
    mode override (Automatic / Always on / Always off).
-5. **Start quantization.** A flyout drawer shows live progress and log
+5. **Start quantization.** A centered job window shows live status and log
    output until the job finishes or errors; it keeps running if you
-   minimize it or navigate away.
+   minimize it. Use **Cancel** (in the job window or the bottom bar) to
+   stop a running job.
 
 ## Configuration
 
@@ -178,6 +188,12 @@ GFlava-Quant is a thin UI layer — the real quantization work is done by:
 - **[safetensors](https://github.com/huggingface/safetensors)** (Hugging
   Face) and **[PyTorch](https://pytorch.org/)** — tensor format and
   runtime that `ctq` and the marker-fix step build on.
+- **[Space Grotesk](https://github.com/floriankarsten/space-grotesk)**
+  (Florian Karsten and The Space Grotesk Project Authors),
+  **[IBM Plex Sans](https://github.com/IBM/plex)** (IBM) and
+  **[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono)**
+  (JetBrains) — the UI typefaces, bundled under the SIL Open Font License
+  1.1 (see `fonts/OFL.txt`).
 
 This tool was designed and built collaboratively with
 [Claude Code](https://claude.com/claude-code).
