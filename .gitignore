@@ -1,5 +1,6 @@
 # Generated at runtime, machine/personal-specific -- regenerated automatically
 config.json
+presets.json
 start_server_config.txt
 logs/
 
@@ -12,6 +13,7 @@ __pycache__/
 
 # Personal working notes, not part of the published tool
 PROJECT_SUMMARY.md
+GFlava-Quant_Session-Zusammenfassung.md
 
 # Editor/OS cruft
 .DS_Store

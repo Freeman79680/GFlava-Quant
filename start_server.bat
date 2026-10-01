@@ -52,6 +52,12 @@ if not exist "%SERVER_SCRIPT%" (
     exit /b 1
 )
 
+rem Since version 1.3 the app consists of several files: quant_server.py needs the
+rem "templates" and "static" folders right next to it.
+for %%I in ("%SERVER_SCRIPT%") do set "SERVER_DIR=%%~dpI"
+if not exist "%SERVER_DIR%templates\index.html" goto :MISSING_FILES
+if not exist "%SERVER_DIR%static\app.js" goto :MISSING_FILES
+
 > "%CONFIG_FILE%" (
     echo PYTHON_EXE=%PYTHON_EXE%
     echo SERVER_SCRIPT=%SERVER_SCRIPT%
@@ -138,6 +144,15 @@ echo.
 echo Server has stopped.
 pause
 exit /b 0
+
+:MISSING_FILES
+echo.
+echo [ERROR] The folders "templates" and "static" were not found next to quant_server.py:
+echo   %SERVER_DIR%
+echo GFlava-Quant needs them since version 1.3 -- please copy the complete folder.
+echo.
+pause
+exit /b 1
 
 :PICK_FILE
 setlocal

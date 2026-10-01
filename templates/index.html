@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>GFlava-Quant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/icon.png">
+<script>
+  // Theme/Minimal-Modus vor dem ersten Zeichnen setzen, damit nichts aufblitzt.
+  (function () {
+    try {
+      if (localStorage.getItem('theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      if (localStorage.getItem('minimal') === '1') document.documentElement.setAttribute('data-minimal', '');
+    } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="/static/style.css?v=__APP_VERSION__">
+</head>
+<body>
+<canvas id="bgCanvas" aria-hidden="true"></canvas>
+
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <img class="brand-icon" src="/icon.png" alt="">
+      <span class="brand-name">GFlava-Quant</span><span class="version-chip">v__APP_VERSION__</span>
+    </div>
+    <div class="topbar-controls">
+      <button type="button" class="pill pill-btn update-pill" id="updatePill" hidden><span class="dot"></span><span id="updatePillText"></span></button>
+      <button type="button" class="pill pill-btn" id="ctqStatus"><span class="dot"></span><span id="ctqStatusText">ctq ...</span></button>
+      <select id="langSelect" class="lang-select" aria-label="Language / Sprache">
+        <option value="de">Deutsch</option>
+        <option value="en">English</option>
+      </select>
+      <button type="button" class="secondary icon-btn" id="themeToggleBtn" aria-label="Theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+      </button>
+      <button type="button" class="secondary icon-btn" id="minimalToggleBtn" aria-pressed="false">
+        <svg class="icon-minimal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        <svg class="icon-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+      </button>
+      <div class="settings-anchor">
+        <button type="button" class="secondary icon-btn" id="settingsBtn" data-i18n-title="settingsTitle" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <div class="settings-dropdown" id="settingsOverlay" role="dialog" aria-labelledby="settingsHeadingEl">
+          <div class="modal">
+            <div class="modal-header">
+              <h2 id="settingsHeadingEl" data-i18n="settingsHeading"></h2>
+              <button type="button" class="secondary icon-btn" id="settingsCloseBtn" data-i18n-title="closeTitle">&times;</button>
+            </div>
+            <p class="modal-hint" data-i18n="settingsIntro"></p>
+
+            <div class="modal-section">
+              <h3 data-i18n="settingsModelRootsHeading"></h3>
+              <div class="root-list" id="settingsRootList"></div>
+              <button type="button" class="secondary" id="addRootBtn" data-i18n="settingsAddRoot"></button>
+            </div>
+
+            <div class="modal-section">
+              <h3 data-i18n="settingsComfyuiHeading"></h3>
+              <p class="modal-hint" data-i18n="settingsComfyuiHint"></p>
+              <div class="field-with-browse">
+                <input type="text" id="comfyuiRootInput" data-i18n-ph="settingsComfyuiPh" aria-label="ComfyUI">
+                <button type="button" class="secondary" id="browseComfyuiBtn" data-i18n="settingsBrowse"></button>
+              </div>
+            </div>
+
+            <div class="modal-section">
+              <h3 data-i18n="settingsCtqHeading"></h3>
+              <p class="modal-hint" id="settingsCtqAutoHint"></p>
+              <div class="field-with-browse">
+                <input type="text" id="ctqOverrideInput" data-i18n-ph="settingsCtqPh" aria-label="ctq">
+                <button type="button" class="secondary" id="browseCtqBtn" data-i18n="settingsBrowse"></button>
+              </div>
+            </div>
+
+            <div class="modal-section" id="updatesSection">
+              <h3 data-i18n="settingsCheckHeading"></h3>
+              <p class="modal-hint" data-i18n="settingsCheckHint"></p>
+              <div id="systemCheckList"></div>
+              <div class="check-footer">
+                <button type="button" class="secondary" id="runSystemCheckBtn" data-i18n="settingsRunCheck"></button>
+                <span class="hint" id="systemCheckTime"></span>
+              </div>
+              <label class="check-toggle"><input type="checkbox" id="autoUpdateCheck"><span data-i18n="autoUpdateCheckLabel"></span></label>
+            </div>
+
+            <div id="settingsError" class="settings-msg" hidden></div>
+            <div class="modal-actions">
+              <button type="button" class="secondary" id="settingsCancelBtn" data-i18n="settingsCancel"></button>
+              <button type="button" class="primary" id="settingsSaveBtn" data-i18n="settingsSave"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+
+  <!-- Update-Hinweis: erscheint nach der automatischen Prüfung beim Start -->
+  <section class="update-banner" id="updateBanner" role="status" hidden>
+    <div class="update-banner-text" id="updateBannerText"></div>
+    <div class="update-banner-actions">
+      <button type="button" class="secondary" id="updateShowBtn" data-i18n="updateShowBtn"></button>
+      <button type="button" class="secondary icon-btn" id="updateDismissBtn" data-i18n-title="updateDismissTitle">&times;</button>
+    </div>
+  </section>
+
+  <!-- Erster Eindruck: Versprechen, Modellauswahl, sichtbare Wirkung -->
+  <section class="hero" aria-labelledby="heroTitle">
+    <div class="hero-text">
+      <h1 id="heroTitle" data-i18n="heroTitle"></h1>
+      <p class="lead" data-i18n="heroLead"></p>
+      <details class="explain">
+        <summary data-i18n="introSummary"></summary>
+        <p data-i18n="introText"></p>
+      </details>
+
+      <div class="panel pick" id="stepModel">
+        <div class="step-head"><span class="step-num" aria-hidden="true">1</span><h2 data-i18n="stepModelTitle"></h2></div>
+        <label class="sr-only" for="modelSearch" data-i18n="modelSelectLabel"></label>
+        <div class="combo" id="modelCombo">
+          <div class="combo-row">
+            <input type="text" id="modelSearch" role="combobox" aria-expanded="false" aria-controls="modelComboPanel" aria-autocomplete="list" autocomplete="off" spellcheck="false" data-i18n-ph="modelSearchPh">
+            <button type="button" class="secondary icon-btn" id="refreshModelsBtn" data-i18n-title="refreshModelsTitle">&#8635;</button>
+          </div>
+          <div class="combo-panel" id="modelComboPanel" role="listbox" hidden></div>
+        </div>
+        <div class="meta-row">
+          <div id="modelTypePill" class="pill" hidden></div>
+          <span class="hint" id="modelSelectHint"></span>
+        </div>
+        <div class="hint path-preview" id="modelPathPreview" hidden></div>
+        <div class="link-row">
+          <button type="button" class="link-btn" id="manualPathToggle"></button>
+          <button type="button" class="link-btn" id="outputToggle"></button>
+        </div>
+        <div class="field" id="manualPathRow" hidden>
+          <label for="inputPath" data-i18n="manualPathLabel"></label>
+          <input type="text" id="inputPath" class="mono" spellcheck="false" autocomplete="off" data-i18n-ph="manualPathPh">
+          <div class="hint" data-i18n="manualPathHint"></div>
+        </div>
+        <div class="field" id="outputPathRow" hidden>
+          <label for="outputPath" data-i18n="outputPathLabel"></label>
+          <input type="text" id="outputPath" class="mono" spellcheck="false" autocomplete="off" data-i18n-ph="outputPathPh">
+          <div class="hint" id="outputPathHint"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="shrink panel" id="shrink" aria-live="polite" aria-labelledby="shrinkTitle">
+      <h2 class="shrink-title" id="shrinkTitle" data-i18n="shrinkTitle"></h2>
+      <div class="shrink-row ref">
+        <div class="shrink-lab"><span class="shrink-name" id="srcName">bf16</span><span class="shrink-size" id="sizeBefore">&ndash;</span></div>
+        <div class="cells" id="srcCells" aria-hidden="true"></div>
+      </div>
+      <div class="shrink-row tgt">
+        <div class="shrink-lab"><span class="shrink-name" id="tgtName">INT8 ConvRot</span><span class="shrink-size big" id="sizeAfter">&ndash;</span></div>
+        <div class="cells" id="tgtCells" aria-hidden="true"></div>
+      </div>
+      <p class="hint" id="shrinkNote"></p>
+      <div class="recommend">
+        <button type="button" id="recommendBtn" class="secondary" data-i18n="recommendBtn"></button>
+        <span class="hint" id="recommendNote"></span>
+      </div>
+    </aside>
+  </section>
+
+  <!-- Warteschlange: nur sichtbar, wenn es Aufträge gibt -->
+  <section class="panel queue" id="queueSection" aria-labelledby="queueTitle" hidden>
+    <div class="section-head">
+      <h2 id="queueTitle" data-i18n="queueTitle"></h2>
+      <p class="hint" data-i18n="queueHint"></p>
+    </div>
+    <ul class="queue-list" id="queueList"></ul>
+  </section>
+
+  <!-- Schritt 2: Format -->
+  <section class="step" id="stepFormat" aria-labelledby="stepFormatTitle">
+    <div class="step-head"><span class="step-num" aria-hidden="true">2</span><h2 id="stepFormatTitle" data-i18n="stepFormatTitle"></h2></div>
+    <p class="hint intro" data-i18n="formatIntro"></p>
+    <div class="format-grid" id="formatGrid" role="group" aria-labelledby="stepFormatTitle"></div>
+    <div class="panel format-detail" id="formatDetail">
+      <div class="hint" id="formatHint"></div>
+      <div class="field" id="groupsizeRow">
+        <input type="hidden" id="convrotGroupsizeVal" value="256">
+        <span class="field-label" id="groupsizeLabel" data-i18n="groupsizeLabel"></span>
+        <div class="segc" id="groupsizeSeg" role="group" aria-labelledby="groupsizeLabel"></div>
+        <details class="more"><summary data-i18n="moreLabel"></summary><div class="hint" data-i18n="groupsizeHint"></div></details>
+      </div>
+      <div class="field" id="blockSizeRow" hidden>
+        <label for="blockSize" data-i18n="blockSizeLabel"></label>
+        <input type="number" id="blockSize" value="128" step="1" min="1" class="narrow">
+        <details class="more"><summary data-i18n="moreLabel"></summary><div class="hint" data-i18n="blockSizeHint"></div></details>
+      </div>
+    </div>
+    <details class="explain glossary">
+      <summary data-i18n="glossarySummary"></summary>
+      <dl id="glossaryList"></dl>
+    </details>
+  </section>
+
+  <!-- Schritt 3: Layer-Schutz -->
+  <section class="step" id="stepExclude" aria-labelledby="stepExcludeTitle">
+    <div class="step-head"><span class="step-num" aria-hidden="true">3</span><h2 id="stepExcludeTitle" data-i18n="stepExcludeTitle"></h2></div>
+    <p class="hint intro" data-i18n="excludeIntro"></p>
+    <div class="panel exclude-panel">
+      <div class="detect-banner" id="excludeStatus" role="status"></div>
+      <div id="chipGroups"></div>
+      <div class="chip-group">
+        <div class="chip-group-title" data-i18n="groupOther"></div>
+        <div class="chips" id="chipsOther"></div>
+      </div>
+      <div class="field" id="customRegexRow" hidden>
+        <label for="customRegex" data-i18n="customRegexLabel"></label>
+        <input type="text" id="customRegex" class="mono" placeholder="(img_in|txt_in|modulation|...)" spellcheck="false" autocomplete="off">
+        <details class="more"><summary data-i18n="moreLabel"></summary><div class="hint" data-i18n="customRegexHint"></div></details>
+      </div>
+      <div class="hint exclude-hint" id="excludeHint"></div>
+    </div>
+  </section>
+
+  <!-- Voreinstellungen -->
+  <section class="panel presets" id="presetsSection" aria-labelledby="presetsTitle">
+    <div class="section-head">
+      <h2 id="presetsTitle" data-i18n="presetsTitle"></h2>
+      <p class="hint" data-i18n="presetsHint"></p>
+    </div>
+    <div class="chips" id="presetChips"></div>
+    <div class="preset-save">
+      <button type="button" class="secondary" id="presetSaveToggle" data-i18n="presetSaveBtn"></button>
+      <div class="preset-save-row" id="presetSaveRow" hidden>
+        <label class="sr-only" for="presetName" data-i18n="presetNameLabel"></label>
+        <input type="text" id="presetName" maxlength="60" data-i18n-ph="presetNamePh" autocomplete="off">
+        <button type="button" class="primary" id="presetSaveConfirm" data-i18n="presetSaveConfirm"></button>
+        <button type="button" class="secondary" id="presetSaveCancel" data-i18n="settingsCancel"></button>
+      </div>
+    </div>
+    <div class="inline-msg" id="presetMsg" role="status" hidden></div>
+  </section>
+
+  <!-- Erweitert -->
+  <section class="step" aria-label="Advanced">
+    <details class="panel advanced" id="advancedDetails">
+      <summary data-i18n="advancedSummary"></summary>
+      <div class="hint" id="advancedPresetHint" hidden></div>
+      <div class="field">
+        <label for="lowMemoryMode" data-i18n="lowMemoryLabel"></label>
+        <select id="lowMemoryMode">
+          <option value="auto" data-i18n="lowMemoryAuto"></option>
+          <option value="on" data-i18n="lowMemoryOn"></option>
+          <option value="off" data-i18n="lowMemoryOff"></option>
+        </select>
+        <details class="more"><summary data-i18n="moreLabel"></summary><div class="hint" data-i18n="lowMemoryHint"></div></details>
+      </div>
+      <div class="field">
+        <label for="extraArgs" data-i18n="extraArgsLabel"></label>
+        <input type="text" id="extraArgs" class="mono" data-i18n-ph="extraArgsPh" spellcheck="false" autocomplete="off">
+        <details class="more"><summary data-i18n="moreLabel"></summary><div class="hint" data-i18n="extraArgsHint"></div></details>
+        <div class="tools"><button type="button" class="secondary" id="ctqHelpBtn" data-i18n="ctqHelpShow"></button></div>
+        <pre id="ctqHelpOutput" class="code" hidden></pre>
+      </div>
+    </details>
+  </section>
+
+  <!-- Befehl ansehen -->
+  <section class="step" aria-label="Command">
+    <details class="panel preview" id="previewDetails">
+      <summary data-i18n="previewSummary"></summary>
+      <p class="hint" data-i18n="previewHint"></p>
+      <div class="tools">
+        <div class="seg" role="group" aria-label="Shell">
+          <button type="button" id="shellCmd" aria-pressed="true">cmd</button>
+          <button type="button" id="shellPs" aria-pressed="false">PowerShell</button>
+        </div>
+        <button type="button" class="secondary" id="copyCmdBtn" data-i18n="copyCmdBtn"></button>
+      </div>
+      <pre id="previewCmd" class="code"></pre>
+      <p class="hint" id="previewNote"></p>
+    </details>
+  </section>
+
+  <!-- Frühere Läufe -->
+  <section class="panel logs" aria-labelledby="logsTitle">
+    <div class="section-head">
+      <h2 id="logsTitle" data-i18n="logsTitle"></h2>
+      <p class="hint" data-i18n="logsIntro"></p>
+    </div>
+    <div class="logs-list" id="logsList"></div>
+    <pre id="logViewer" class="code" hidden></pre>
+  </section>
+
+  <p class="foot-stats" id="statsBar"></p>
+</main>
+
+<div class="action-bar" id="actionBar">
+  <div class="action-bar-inner">
+    <div class="action-main">
+      <div class="action-summary" id="actionSummary"></div>
+      <div class="action-progress" id="actionProgress" hidden>
+        <div class="progress-outer"><div class="progress-inner" id="progressBar"></div></div>
+        <div id="drawerTimer" class="job-timer"></div>
+      </div>
+    </div>
+    <div class="action-buttons">
+      <button type="button" class="secondary cancel-job-btn" id="cancelJobBarBtn" hidden data-i18n="cancelJobBtn"></button>
+      <button type="button" class="primary" id="runBtn"></button>
+    </div>
+  </div>
+</div>
+
+<div class="job-drawer" id="jobDrawer" role="dialog" aria-labelledby="drawerStatusLine">
+  <div class="job-drawer-header" id="jobDrawerHeader">
+    <div class="job-drawer-header-text">
+      <div class="job-drawer-name" id="drawerName"></div>
+      <div id="drawerStatusLine" class="job-drawer-status"></div>
+    </div>
+    <div class="job-drawer-actions">
+      <button type="button" class="secondary cancel-job-btn" id="cancelJobDrawerBtn" data-i18n="cancelJobBtn"></button>
+      <button type="button" class="secondary icon-btn" id="drawerCloseBtn" data-i18n-title="minimizeTitle">&times;</button>
+    </div>
+  </div>
+  <div id="jobLogLink" class="hint"></div>
+  <div id="log" tabindex="0"></div>
+  <div class="job-drawer-resize-handle" id="jobDrawerResizeHandle" aria-hidden="true"></div>
+</div>
+<button type="button" class="drawer-reopen-pill" id="drawerReopenBtn" hidden>
+  <span class="dot"></span><span id="drawerReopenText"></span>
+</button>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/static/i18n.js?v=__APP_VERSION__" charset="utf-8"></script>
+<script src="/static/app.js?v=__APP_VERSION__" charset="utf-8"></script>
+</body>
+</html>

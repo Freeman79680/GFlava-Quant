@@ -1,226 +1,223 @@
-# GFlava-Quant -- lokales Web-Tool zur Modell-Quantisierung
+# GFlava-Quant – lokales Web-Tool zur Modell-Quantisierung
 
 *[Read this in English](README.md)*
 
-Eine kleine Oberflaeche im Browser fuer das, was wir bisher per PowerShell
-gemacht haben: bf16-Modell auswaehlen, Format waehlen, quantisieren lassen.
-Oben rechts: Sprachmenue (Deutsch/English, komplette Oberflaeche wird
-uebersetzt), ein Dark-/Light-Mode-Umschalter, ein Zahnrad fuer die
-Einstellungen (Modell-Ordner, ComfyUI-Pfad, Systemcheck, siehe unten; klappt
-als Dropdown auf) und ein Schalter fuer ein **Minimal-Design** (keine
-Verlaeufe, nur eine Akzentfarbe). Sprache, Theme und Minimal-Design werden im
+Eine kleine Oberfläche im Browser für das, was sonst per PowerShell und
+`ctq`-Befehlen passiert: bf16-Modell auswählen, Format wählen, quantisieren
+lassen. Oben rechts: Sprachmenü (Deutsch/English, die komplette Oberfläche
+wird übersetzt), ein Dark-/Light-Mode-Umschalter, ein Schalter für das
+**Minimal-Design** (keine Verläufe, nur eine Akzentfarbe) und ein Zahnrad für
+die Einstellungen (Modell-Ordner, ComfyUI-Pfad, Updates und Systemcheck, siehe
+unten; klappt als Dropdown auf). Sprache, Theme und Minimal-Design werden im
 Browser gespeichert (localStorage) und bleiben bei einem Neuladen erhalten.
 
-**Wichtig:** Das ist eine *lokale* Anwendung, kein Hosting-Dienst. Sie laeuft
-nur auf deinem eigenen PC, liest/schreibt nur Dateien auf deinem PC und ruft
-`ctq` auf deinem PC auf. Der Server ist nur unter `127.0.0.1` (also nur von
-diesem Rechner aus) erreichbar.
+**Wichtig:** Das ist eine *lokale* Anwendung, kein Hosting-Dienst. Sie läuft
+nur auf deinem eigenen PC, liest und schreibt nur Dateien auf deinem PC und
+ruft `ctq` auf deinem PC auf. Der Server ist nur unter `127.0.0.1` (also nur
+von diesem Rechner aus) erreichbar.
+
+## Aufbau
+
+Seit Version 1.3 besteht GFlava-Quant aus mehreren Dateien, die zusammen in
+einem Ordner liegen müssen:
+
+```
+quant_server.py        Server (Flask), ctq-Aufruf, Warteschlange, Erkennung
+templates/index.html   Gerüst der Seite
+static/style.css       Design (Dunkel, Hell, Minimal)
+static/i18n.js         alle Texte auf Deutsch und Englisch
+static/app.js          Logik der Oberfläche
+fonts/, icon.png       Schriften und Logo
+start_server.bat       Starter für Windows
+```
+
+Fehlen `templates` oder `static`, meldet das `start_server.bat` beim Start,
+und die Seite zeigt statt der Oberfläche einen Hinweis.
 
 ## Voraussetzung (einmalig)
 
-Du brauchst `convert_to_quant` (ctq, das eigentliche Quantisierungs-Programm)
-und `flask` (fuer die Web-Oberflaeche). `start_server.bat` (siehe unten)
-prueft beide beim Start automatisch und installiert sie auf Wunsch; von
-Hand geht es auch:
+Du brauchst `convert_to_quant` (ctq, das eigentliche
+Quantisierungs-Programm) und `flask` (für die Web-Oberfläche).
+`start_server.bat` (siehe unten) prüft beide beim Start automatisch und
+installiert sie auf Wunsch. Von Hand geht es auch, mit dem Python, das dein
+ComfyUI benutzt:
 
 ```powershell
-& "H:\ComfyUI_windows_portable\ComfyUI-Easy-Install\python_embeded\python.exe" -m pip install flask convert_to_quant
+& "C:\ComfyUI_windows_portable\python_embeded\python.exe" -m pip install flask convert_to_quant
 ```
 
 ## Starten
 
 **Am einfachsten: `start_server.bat` doppelklicken** (Englisch, damit sie
-auch auf einem fremden Rechner verstaendlich ist). Sie:
+auch auf einem fremden Rechner verständlich ist). Sie:
 
 1. sucht `python.exe` und `quant_server.py` zuerst automatisch (falls die
    `.bat` im selben Ordner wie `python.exe` liegt bzw. `quant_server.py`
-   daneben liegt) -- findet sie das nicht, oeffnet sich ein Datei-Auswahl-
-   Fenster, in dem du beides manuell auswaehlen kannst;
+   daneben liegt). Findet sie das nicht, öffnet sich ein Datei-Auswahlfenster,
+   in dem du beides von Hand auswählst;
 2. merkt sich beide Pfade danach in `start_server_config.txt` neben der
-   `.bat`, damit du sie auf diesem Rechner nur einmal auswaehlen musst
-   (Datei loeschen, um die Auswahl zu wiederholen -- z. B. auf einem
-   anderen Server, wo `python.exe` woanders liegt);
-3. prueft, ob `flask` und `convert_to_quant` (ctq) installiert sind -- falls
-   nicht, erklaert sie jeweils kurz wofuer es gebraucht wird und fragt, ob
-   es installiert werden soll (Ja/Nein);
-4. startet den Server und oeffnet nach 2 Sekunden automatisch den Browser
+   `.bat`, damit du sie auf diesem Rechner nur einmal auswählen musst (Datei
+   löschen, um die Auswahl zu wiederholen);
+3. prüft, ob `templates` und `static` neben `quant_server.py` liegen;
+4. prüft, ob `flask` und `convert_to_quant` (ctq) installiert sind. Falls
+   nicht, erklärt sie jeweils kurz, wofür es gebraucht wird, und fragt, ob es
+   installiert werden soll (Ja/Nein);
+5. startet den Server und öffnet nach 2 Sekunden automatisch den Browser
    unter **http://127.0.0.1:8877**.
 
 Das Fenster mit dem laufenden Server einfach offen lassen, solange du die
-Seite benutzt. Mit `Strg+C` oder Fenster schliessen beendest du den Server
-wieder.
+Seite benutzt. Mit `Strg+C` oder Fenster schließen beendest du den Server.
 
-Alternativ von Hand ueber PowerShell, z. B. wenn du `quant_server.py` nach
-`H:\ComfyUI_windows_portable\ComfyUI-Easy-Install\python_embeded\` gelegt
-hast:
+Alternativ von Hand über PowerShell:
 
 ```powershell
-& "H:\ComfyUI_windows_portable\ComfyUI-Easy-Install\python_embeded\python.exe" "H:\ComfyUI_windows_portable\ComfyUI-Easy-Install\python_embeded\quant_server.py"
+& "C:\ComfyUI_windows_portable\python_embeded\python.exe" "C:\Pfad\zu\GFlava-Quant\quant_server.py"
 ```
 
 ## Benutzung
 
-1. **Modell auswaehlen**: Dropdown mit allen `.safetensors`-Dateien aus den
-   Modell-Ordnern, die unter dem Zahnrad-Symbol oben rechts ("Einstellungen")
-   eingetragen sind. Beim allerersten Start ist die Liste leer und die
-   Einstellungen oeffnen sich automatisch mit einem Hinweis -- dort kannst du
-   beliebige eigene Ordner hinzufuegen oder entfernen (der Anzeigename ergibt
-   sich aus dem Ordnernamen). Beim Hinzufuegen oeffnet sich ein echter
-   Windows-Ordnerdialog (der
-   Server steuert dafuer kurz ein natives Auswahlfenster an, da ein
-   normales `<input type=file>` aus Sicherheitsgruenden keinen echten
-   Dateisystempfad verraet). Jede Aenderung wird
-   dauerhaft in `config.json` neben `quant_server.py` gespeichert und ist
-   beim naechsten Start automatisch wieder vorausgewaehlt. Jede
-   Modell-Option zeigt Unterordner, Dateiname und Groesse, gruppiert nach
-   Herkunfts-Ordner; nach der Auswahl steht der volle Pfad nochmal als
-   Vorschau darunter, und falls der Modelltyp erkannt wird (siehe Punkt 5),
-   erscheint direkt darunter eine farbige Pille dazu. Der &#8635;-Button
-   liest die Ordner erneut ein (z. B. nach einem neuen Merge/Download).
-   Alternativ ueber den Link "Pfad stattdessen manuell eingeben" einen
-   beliebigen Pfad eintippen (fuer manuell eingegebene Pfade laeuft keine
-   automatische Erkennung).
-2. **Ausgabedatei**: kannst du leer lassen, dann wird automatisch
-   `<dateiname>_<format>.safetensors` im selben Ordner vorgeschlagen.
-3. **Quantisierungsformat**: `INT8 ConvRot` ist vorausgewaehlt -- das haben
-   wir gemeinsam Ende-zu-Ende getestet und in ComfyUI ohne Warnung geladen.
-   Bei ConvRot ist die Gruppengroesse (Standard 256) laut `ctq`-Dokumentation
-   nicht modellspezifisch und muss eine **Potenz von 4** sein (4, 16, 64,
-   256, 1024 -- 128 ist trotz Zweierpotenz ungueltig). Bei `INT8 Block-Wise`
-   gibt es analog ein Feld fuer die Block-Groesse (Standard 128). Die
-   anderen Formate ruft das Tool laut ctq-eigener Dokumentation korrekt auf,
-   aber wir haben ihr Marker-Format nicht gegen eine offizielle Datei
-   verglichen -- probier sie, aber prüf das Ergebnis in ComfyUI, bevor du dich
-   darauf verlaesst.
-4. **Layer-Ausschluss**: Ueber die Schnellauswahl-Kacheln oder direkt im
-   Dropdown darunter -- beide zeigen jetzt **alle** Modelltypen, die ctq
-   kennt: alle 24 Presets aus `ctq --help-filters` deiner installierten
-   Version (Bild-, Video-, Diffusions- und Text-Encoder-Modelle) plus unsere
-   3 eigenen Community-Regexes (Qwen-Image 2.1 Single-Stream, Flux.1,
-   SDXL/Illustrious). `Qwen-Image-2.1 (Single-Stream)` und `ctq --anima`
-   sind von uns Ende-zu-Ende in ComfyUI getestet (gruener
-   "verifiziert"/"Ende-zu-Ende getestet"-Badge). Flux.1 und SDXL/Illustrious
-   sind aus oeffentlich dokumentierten Architektur-Konventionen abgeleitet,
-   aber nicht von uns selbst verifiziert (gelber Badge) -- Ergebnis einmal in
-   ComfyUI pruefen. Bei allen ctq-eigenen Presets zeigt der Hinweistext
-   direkt die Original-Beschreibung aus `ctq --help-filters` deiner
-   installierten Version. Unter "Erweitert" steht zum ausgewaehlten Preset
-   passend, ob zusaetzliche ctq-Argumente noetig sind.
-5. **Automatische Modelltyp-Erkennung**: Sobald du oben ein Modell aus der
-   Liste auswaehlst, liest der Server im Hintergrund nur den Tensor-Header
-   der Datei (keine Tensor-Daten, daher auch bei sehr grossen Modellen
-   schnell) und prueft die Tensor-Namen gegen Architektur-Signaturen. Passt
-   eine eindeutig, erscheint eine farbige Pille ("Erkannt: Anima" o. ae.)
-   und der passende Layer-Ausschluss aus Punkt 4 wird automatisch gesetzt --
-   du kannst das jederzeit ueberschreiben. Erkannt werden Anima, Flux.1,
-   Flux.2, SDXL/Illustrious, Qwen-Image 2.1 (Single-Stream), ctq's aeltere
-   Qwen-Dual-Stream-Variante, Z-Image (+ Refiner), Wan, HunyuanVideo, Krea2,
-   Boogu, Ideogram4, Radiance, NeRF (gross/klein), Chroma/distilled
-   (gross/klein), MinimaxH3, LTXv2, Gemma4 und Qwen3-VL. Die Signaturen fuer
-   die ctq-eigenen Presets stammen direkt aus den `MODEL_FILTERS`-Konstanten
-   deiner installierten `convert_to_quant`-Version (keine Vermutung
-   unsererseits); Anima, Flux.1, Flux.2, SDXL/Illustrious und Qwen-Image 2.1
-   wurden zusaetzlich gegen echte Dateien auf deinem Rechner verifiziert.
-   Flux.1 wird ueber `double_blocks`/`single_blocks` mit `img_mod`/`txt_mod`
-   erkannt (Flux.2 hat stattdessen `stream_modulation` und kein `img_mod`),
-   SDXL/Illustrious ueber den klassischen U-Net-Aufbau
-   (`input_blocks`/`middle_block`/`output_blocks`/`label_emb` -- kommt bei
-   keiner DiT-Architektur wie Flux/Qwen/Anima vor, daher besonders sicher zu
-   unterscheiden). LENS bleibt bewusst **ohne** automatische Erkennung -- es
-   teilt sich zu viele Tensor-Namen mit ctq's Qwen-Dual-Stream-Preset, ohne
-   ein eigenes eindeutiges Merkmal; lieber keine Erkennung als eine falsche.
-   Passt nichts eindeutig, bleibt die Pille einfach weg und du waehlst wie
-   bisher manuell. Fuer manuell eingegebene Pfade (statt Auswahl aus der
-   Liste) laeuft keine automatische Erkennung.
-6. **Erweitert -&gt; Low-Memory-Modus**: steuert ctq's `--low-memory`-Flag.
-   Wir haben im installierten ctq-Quellcode nachgeprueft: Das betrifft
-   ausschliesslich den **System-RAM** beim Einlesen (alle Gewichte vorab in
-   den RAM laden vs. einzeln von der Platte nachladen) -- **nicht den VRAM**
-   der Grafikkarte, die GPU-Verarbeitung verschiebt bei ctq ohnehin immer nur
-   einen Tensor auf einmal und gibt ihn danach wieder frei. "Automatisch"
-   (Standard) aktiviert das Flag nur, wenn die Eingabedatei mehr als 50&nbsp;%
-   des gerade verfuegbaren System-RAM belegt -- das ist ctq's eigene
-   Empfehlung laut `ctq --help`. Kleinere Modelle werden dadurch ohne
-   Streaming-Overhead schneller verarbeitet. Die tatsaechlich gemessenen
-   Werte und die Entscheidung stehen im Log jedes Laufs; ueber "Immer an"/
-   "Immer aus" laesst sich das Flag auch manuell erzwingen.
-7. **Quantisieren starten** klicken. Mittig oeffnet sich ein Fenster
-   (1000&times;500, verschieb- und vergroesserbar) mit Status und Live-Log;
-   Fortschrittsbalken und Dauer stehen in der Leiste unten. Ueber das &times;
-   kannst du es minimieren -- der Job laeuft im Hintergrund weiter, eine
-   kleine Pille oben rechts zeigt den Status und oeffnet das Fenster per
-   Klick wieder.
-8. **Abbrechen**: Solange ein Job laeuft, gibt es im Fenster und in der
-   unteren Leiste einen "Abbrechen"-Knopf. Er beendet ctq samt seinem
-   Python-Unterprozess (sonst wuerde die GPU weiterrechnen) und loescht eine
-   unvollstaendige Ausgabedatei -- aber nur, wenn sie vor dem Start noch
-   nicht existierte.
+Die Seite ist eine einzige Ansicht mit nummerierten Schritten. Einsteiger
+kommen mit Schritt 1 und dem Knopf „Empfohlene Einstellungen verwenden“ aus,
+Details stehen hinter „Erweitert“ und „Mehr dazu“.
 
-Bei `INT8 ConvRot` und `INT8 Tensor-Wise` laeuft danach automatisch der
-Marker-Fix (kuerzt die `.comfy_quant`-Marker auf genau die Felder, die
-ComfyUI erwartet), damit das Ergebnis ohne die `unet unexpected`-Warnung
-laedt -- also genau der Workflow, den wir uns gemeinsam erarbeitet haben,
-nur nicht mehr Schritt fuer Schritt von Hand.
+1. **Modell auswählen**: durchsuchbare Liste mit allen `.safetensors`-Dateien
+   aus den Modell-Ordnern, die unter dem Zahnrad eingetragen sind. Beim
+   allerersten Start ist die Liste leer und die Einstellungen öffnen sich
+   automatisch mit einem Hinweis. Beim Hinzufügen eines Ordners öffnet sich
+   ein echter Windows-Ordnerdialog (ein normales `<input type=file>` verrät
+   aus Sicherheitsgründen keinen echten Dateipfad). Der &#8635;-Knopf liest die
+   Ordner neu ein, zum Beispiel nach einem Download. Über „Pfad stattdessen von
+   Hand eingeben“ geht auch ein beliebiger Pfad, über „Ausgabedatei ändern“ ein
+   eigener Zielname. Ohne Angabe wird `<dateiname>_<format>.safetensors` im
+   selben Ordner verwendet.
+2. **So viel kleiner wird die Datei**: Das Bit-Raster neben der Auswahl zeigt
+   bf16 gegen das gewählte Format. Sobald ein Modell gewählt ist, rechnet die
+   Schätzung mit den echten Tensor-Größen aus dem Datei-Header. Es bleibt eine
+   Schätzung aus der Bitbreite: geschützte Layer bleiben größer, die echte
+   Datei liegt deshalb etwas darüber. **Empfohlene Einstellungen verwenden**
+   setzt INT8 ConvRot und den Layer-Schutz für die erkannte Architektur.
+3. **Format** (Schritt 2): `INT8 ConvRot` ist vorausgewählt. Das ist Ende zu
+   Ende getestet und lädt in ComfyUI ohne Warnung. Bei ConvRot muss die
+   Gruppengröße (Standard 256) laut `ctq`-Dokumentation eine **Potenz von 4**
+   sein (4, 16, 64, 256, 1024). Bei `INT8 Block-Wise` gibt es ein Feld für
+   die Block-Größe (Standard 128). Die anderen Formate (INT8 Tensor-Wise,
+   FP8, NVFP4, MXFP8) ruft das Tool laut ctq-eigener Dokumentation auf, sie
+   sind aber nicht von uns gegen offizielle Dateien geprüft. Ergebnis in
+   ComfyUI kontrollieren, bevor du dich darauf verlässt.
+4. **Layer-Schutz** (Schritt 3): legt fest, welche empfindlichen Layer
+   unquantisiert bleiben. Zur Auswahl stehen alle Presets aus
+   `ctq --help-filters` deiner installierten Version plus drei eigene
+   Community-Regexes (Qwen-Image 2.1 Single-Stream, Flux.1, SDXL/Illustrious),
+   insgesamt 27. Bei den ctq-eigenen Presets zeigt der Hinweistext die
+   Original-Beschreibung aus `ctq --help-filters`.
+5. **Automatische Modelltyp-Erkennung**: Beim Auswählen eines Modells liest
+   der Server nur den Tensor-Header der Datei (keine Tensor-Daten, daher auch
+   bei sehr großen Modellen schnell) und vergleicht die Tensor-Namen mit
+   bekannten Architektur-Signaturen. Passt eine eindeutig, erscheint eine
+   farbige Pille („Erkannt: Anima“ o. ä.) und der passende Layer-Schutz wird
+   gesetzt. Du kannst das jederzeit überschreiben. Erkannt werden Anima,
+   Flux.1, Flux.2, SDXL/Illustrious, Qwen-Image 2.1 (Single-Stream), ctqs
+   ältere Qwen-Dual-Stream-Variante, Z-Image (+ Refiner), Wan, HunyuanVideo,
+   Krea2, Boogu, Ideogram4, Radiance, NeRF (groß/klein), Chroma/distilled
+   (groß/klein), MinimaxH3, LTXv2, Gemma4 und Qwen3-VL. Die Signaturen für
+   die ctq-eigenen Presets stammen direkt aus den `MODEL_FILTERS`-Konstanten
+   deiner installierten `convert_to_quant`-Version. LENS bleibt bewusst ohne
+   Erkennung, weil es sich zu viele Tensor-Namen mit ctqs Qwen-Dual-Stream
+   teilt. Passt nichts eindeutig, bleibt die Pille weg und du wählst selbst.
+6. **Voreinstellungen**: Format, Layer-Schutz und erweiterte Werte lassen
+   sich unter einem Namen speichern (`presets.json`) und mit einem Klick
+   wieder laden. Dateipfade gehören bewusst nicht dazu.
+7. **Erweitert**: zusätzliche ctq-Argumente und der Low-Memory-Modus. Der
+   steuert ctqs `--low-memory`-Flag und betrifft laut ctq-Quellcode nur den
+   **System-RAM** beim Einlesen, **nicht den VRAM**. „Automatisch“ (Standard)
+   schaltet es nur ein, wenn die Eingabedatei mehr als 50&nbsp;% des gerade
+   verfügbaren RAM belegt (ctqs eigene Empfehlung). Gemessene Werte und
+   Entscheidung stehen im Log jedes Laufs.
+8. **Befehl ansehen**: zeigt den genauen `ctq`-Befehl für die aktuellen
+   Einstellungen (für cmd oder PowerShell), zum Kopieren und selbst
+   Ausführen. Er wird von derselben Funktion gebaut wie der echte Lauf.
+9. **Quantisieren starten** (Leiste unten). Mittig öffnet sich ein Fenster
+   (1000&times;500, verschieb- und vergrößerbar) mit Status und Live-Log, sein
+   Rahmen läuft farbig um, solange der Job arbeitet. Fortschrittsbalken und
+   Dauer stehen in der Leiste unten. Über das &times; minimierst du das Fenster,
+   der Job läuft weiter und eine kleine Pille zeigt den Status.
+10. **Warteschlange**: Startest du ein weiteres Modell, während eines läuft,
+    reiht es sich ein. Aufträge laufen nacheinander, ein wartender lässt sich
+    wieder entfernen, und über „Log“ siehst du die Ausgabe jedes Auftrags. Die
+    Warteschlange liegt im Server, ein neu geladener oder geschlossener Tab
+    verliert also nichts.
+11. **Abbrechen**: Solange ein Job läuft, gibt es im Fenster, in der Leiste
+    unten und in der Warteschlange einen „Abbrechen“-Knopf. Er beendet ctq
+    samt seinem Python-Unterprozess (sonst würde die GPU weiterrechnen) und
+    löscht eine unvollständige Ausgabedatei, aber nur, wenn sie vor dem Start
+    noch nicht existierte.
+
+Bei `INT8 ConvRot` und `INT8 Tensor-Wise` läuft danach automatisch der
+Marker-Fix: Er kürzt die `.comfy_quant`-Marker auf genau die Felder, die
+ComfyUI erwartet, damit das Ergebnis ohne die `unet unexpected`-Warnung lädt.
 
 ## Logs
 
-Jeder Quantisierungs-Lauf (voller ctq-Befehl + komplette Ausgabe) wird
-dauerhaft als Datei unter `logs/` neben `quant_server.py` gespeichert --
-bleibt also auch nach einem Server-Neustart erhalten. Im Abschnitt
-"Fruehere Laeufe" auf der Seite kannst du jeden gespeicherten Lauf jederzeit
-nachtraeglich nachlesen.
+Jeder Quantisierungs-Lauf (voller ctq-Befehl und komplette Ausgabe) wird
+dauerhaft als Datei unter `logs/` neben `quant_server.py` gespeichert und
+bleibt auch nach einem Neustart erhalten. Im Abschnitt „Frühere Läufe“ kannst
+du jeden Lauf nachlesen.
 
-## Einstellungen &amp; Systemcheck
+## Einstellungen, Updates und Systemcheck
 
-Zahnrad oben rechts oeffnet die Einstellungen:
+Das Zahnrad oben rechts öffnet die Einstellungen:
 
-- **Modell-Ordner**: siehe oben -- beliebig viele, frei waehlbar, dauerhaft
-  gespeichert.
-- **ComfyUI-Installation**: Pfad zu deinem ComfyUI-Ordner (nicht
-  `python_embeded`, sondern der Ordner mit `custom_nodes` darin). Wird beim
-  allerersten Start anhand des Python-Interpreters geraten (funktioniert bei
-  der ueblichen ComfyUI-Portable-Ordnerstruktur automatisch), laesst sich
-  aber jederzeit aendern. Wird nur fuer den Systemcheck unten gebraucht.
+- **Modell-Ordner**: beliebig viele, frei wählbar, dauerhaft gespeichert.
+- **ComfyUI-Installation**: Pfad zu deinem ComfyUI-Ordner (der mit
+  `custom_nodes` darin). Wird beim ersten Start anhand des
+  Python-Interpreters geraten (klappt bei der üblichen
+  ComfyUI-Portable-Struktur automatisch). Wird nur für den Check von
+  ComfyUI-INT8-Fast gebraucht.
 - **ctq-Programm**: wird normalerweise automatisch neben deinem Python
-  gefunden (siehe Kopfzeile). Nur falls das fehlschlaegt, kannst du hier
-  manuell den Pfad zu `ctq.exe` eintragen.
-- **Systemcheck**: prueft (braucht Internetzugriff)
-  - ob `convert_to_quant` (ctq) ueberhaupt installiert ist. Fehlt es
-    komplett (z. B. auf einem neuen Rechner, wo nur `flask` ueber
-    `start_server.bat` installiert wurde, aber `ctq` noch nie), installiert
-    ein "Installieren"-Knopf es per `pip install convert_to_quant`. Ist es
-    installiert, aber veraltet (Vergleich gegen PyPI via
-    `pip index versions`), holt "Aktualisieren" die neueste Version --
-    beides derselbe `pip install -U convert_to_quant`-Befehl.
-  - ob das Custom-Node [ComfyUI-INT8-Fast](https://github.com/BobJohnson24/ComfyUI-INT8-Fast)
-    in `<ComfyUI>\custom_nodes\` installiert ist, und falls ja, ob es ein
-    Update gibt (Vergleich der lokalen gegen die entfernte Git-Revision).
-    Fehlt es, klont ein "Installieren"-Knopf das Repository per `git clone`
-    in deinen `custom_nodes`-Ordner; ist es installiert und veraltet, holt
-    "Aktualisieren" per `git pull` die neueste Version. Beides ist ein
-    echter, sofort ausgefuehrter Git-Befehl auf deinem Rechner -- also nur
-    klicken, wenn du das wirklich willst. Git muss dafuer installiert und im
-    `PATH` sein.
+  gefunden. Nur falls das fehlschlägt, trägst du hier den Pfad zu `ctq.exe`
+  ein.
+- **Updates und Systemcheck** (braucht Internet):
+  - **GFlava-Quant**: vergleicht die eigene Version mit dem neuesten Release
+    auf GitHub. Gibt es ein neueres, führt „Release ansehen“ zur
+    Download-Seite. Installiert wird dabei nichts automatisch.
+  - **convert_to_quant (ctq)**: ob es installiert ist und ob PyPI eine neuere
+    Version hat. „Installieren“ bzw. „Aktualisieren“ führt
+    `pip install -U convert_to_quant` aus.
+  - **[ComfyUI-INT8-Fast](https://github.com/BobJohnson24/ComfyUI-INT8-Fast)**:
+    ob das Custom-Node in `<ComfyUI>\custom_nodes\` liegt und ob es ein Update
+    gibt (lokale gegen entfernte Git-Revision). „Installieren“ klont es per
+    `git clone`, „Aktualisieren“ holt es per `git pull`. Das sind echte
+    Git-Befehle auf deinem Rechner. Git muss dafür installiert und im `PATH`
+    sein.
 
-Alle Einstellungen liegen in `config.json` neben `quant_server.py` -- die
-Datei kannst du auch von Hand bearbeiten oder sichern.
+  Kurz nach dem Öffnen der Seite läuft diese Prüfung automatisch. Gibt es
+  Updates, erscheint ein Hinweis über der Seite und eine Pille „Update
+  verfügbar“ in der Kopfzeile. Beide führen zu diesem Abschnitt. Blendest du
+  den Hinweis aus, kommt er erst bei einer noch neueren Version wieder, die
+  Pille bleibt. Mit **Nach Updates suchen** prüfst du jederzeit von Hand neu.
+  Die automatische Prüfung lässt sich mit dem Häkchen darunter abschalten
+  (gilt für diesen Browser). Ihr Ergebnis wird eine Stunde lang
+  wiederverwendet, damit nicht jedes Neuladen GitHub, PyPI und Git abfragt.
+
+Modell-Ordner, ComfyUI- und ctq-Pfad liegen in `config.json` neben
+`quant_server.py`. Die Datei kannst du auch von Hand bearbeiten oder sichern.
 
 ## Grenzen
 
-- Es kann immer nur ein Quantisierungs-Job gleichzeitig laufen (ein zweiter
-  Klick auf "Quantisieren starten" waehrend ein Job laeuft, gibt einen
-  Fehler statt zwei Jobs parallel zu starten -- das wuerde sich sonst um
-  RAM/VRAM streiten).
-- Eingestellte Formularwerte (Format, Exclude-Preset, Extra-Argumente)
-  werden zwischen zwei Server-Neustarts nicht gespeichert -- nur die
-  Logs unter `logs/` sowie die Einstellungen in `config.json` bleiben
-  dauerhaft erhalten.
+- Es läuft immer nur ein Quantisierungs-Job gleichzeitig (sonst würden sich
+  zwei Jobs um RAM und VRAM streiten). Weitere warten in der Warteschlange.
+  Die liegt im Speicher des Servers und ist nach einem Neustart leer; die
+  Logs bleiben.
+- Formate außer INT8 ConvRot sind nach ctq-Dokumentation aufgerufen, aber
+  nicht von uns Ende zu Ende geprüft.
+- Nur Windows (native Datei-Dialoge über PowerShell, RAM-Erkennung über
+  Windows-APIs).
 
 ## Schriftarten
 
-Die Oberflaeche nutzt [Space Grotesk](https://github.com/floriankarsten/space-grotesk),
+Die Oberfläche nutzt [Space Grotesk](https://github.com/floriankarsten/space-grotesk),
 [IBM Plex Sans](https://github.com/IBM/plex) und
 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono). Sie liegen unter
-`fonts/` und werden lokal ausgeliefert -- die Seite laedt nichts aus dem
+`fonts/` und werden lokal ausgeliefert, die Seite lädt nichts aus dem
 Internet. Alle drei stehen unter der SIL Open Font License 1.1, siehe
 `fonts/OFL.txt`.

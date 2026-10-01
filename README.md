@@ -5,7 +5,7 @@
 <h1 align="center">GFlava-Quant</h1>
 
 <p align="center">
-  A local, single-file web UI for quantizing ComfyUI diffusion models with
+  A small local web UI for quantizing ComfyUI diffusion models with
   <a href="https://github.com/silveroxides/convert_to_quant"><code>convert_to_quant</code></a> (<code>ctq</code>).
 </p>
 
@@ -28,11 +28,27 @@ so the file loads without warnings. GFlava-Quant wraps all of that in a
 small local web app: pick a model, let it recognize the architecture, click
 quantize, watch the log.
 
-It's a single Python file (Flask + vanilla JS, no build step, no framework)
-that runs only on `127.0.0.1` — nothing leaves your machine.
+It's a small Flask app with plain HTML, CSS and JavaScript (no build step, no
+framework, no Node.js) that runs only on `127.0.0.1` — nothing leaves your
+machine.
 
 ## Features
 
+- **See the result before you start.** A bit grid next to the model picker
+  shows how much smaller the file gets (bf16 vs. the chosen format). Once a
+  model is selected, the estimate uses the real tensor sizes from the file
+  header. It is an estimate from the bit width: protected layers stay larger,
+  so the real file lands slightly above it.
+- **One-click recommended settings.** "Use recommended settings" picks INT8
+  ConvRot plus the layer protection for the detected architecture.
+- **Queue.** Add as many models as you like while one is running. Jobs run one
+  after another, a waiting job can be removed again, and the queue lives in the
+  server, so a reloaded or closed tab loses nothing.
+- **Presets.** Save format, layer protection and advanced values under a name
+  (`presets.json`). File paths are deliberately not part of a preset.
+- **Command preview.** Shows the exact `ctq` command for your current settings
+  (cmd or PowerShell quoting) so you can copy it and run it yourself. It is built
+  by the same function as the real run.
 - **Automatic model architecture detection.** Selecting a model reads just
   its safetensors header (no tensor data, so it's fast even on huge files)
   and matches the tensor names against known architecture signatures. On a
@@ -69,7 +85,7 @@ that runs only on `127.0.0.1` — nothing leaves your machine.
 - **Live job window** that opens centered (1000×500, draggable and
   resizable) with status and streaming log; progress bar and elapsed time
   sit in the bottom bar. Minimizes to a small status pill so you can keep
-  working.
+  working. Open the log of any queued or finished job from the queue list.
 - **Cancel a running job.** Stops `ctq` together with its Python child
   process (otherwise the GPU would keep working) and removes the incomplete
   output file — but only if that file didn't exist before the job started.
@@ -79,17 +95,27 @@ that runs only on `127.0.0.1` — nothing leaves your machine.
   automatically on the next start. On first launch the list is empty and
   Settings opens with a short hint. Includes real-time search across all
   configured folders.
-- **System check.** Verifies whether `ctq` is installed and up to date
-  (compares against PyPI), and whether the optional
+- **Update check and system check.** Shortly after the page opens,
+  GFlava-Quant checks whether a newer release of itself exists on GitHub,
+  whether `ctq` is installed and up to date (compares against PyPI), and
+  whether the optional
   [ComfyUI-INT8-Fast](https://github.com/BobJohnson24/ComfyUI-INT8-Fast)
   custom node is installed and current (compares local vs. remote git
-  revision) — with one-click install/update buttons.
+  revision). Available updates show up as a notice above the page and a pill
+  in the top bar; ctq and INT8-Fast get one-click install/update buttons, a
+  new GFlava-Quant version links to its release page. "Check for updates" in
+  Settings checks again at any time. The automatic check can be switched
+  off there; its result is reused for an hour so reloading the page doesn't
+  query GitHub, PyPI and git every time.
 - **Dark/light theme, minimal design mode and German/English UI**, all
   persisted in the browser and switched without a page reload. The minimal
-  mode drops every gradient and uses a single accent color.
+  mode drops every gradient and uses a single accent color. The background is
+  static (it is only redrawn on load, theme change and resize), so there is no
+  motion to switch off for "reduce motion".
 - **Fully local, including fonts.** Space Grotesk, IBM Plex Sans and
   JetBrains Mono are bundled under `fonts/` — the page makes no requests to
-  the internet.
+  the internet. Only the update check (see above) and the install/update
+  buttons go online, from the local server.
 - **One-click launcher** (`start_server.bat`): finds `python.exe` and
   `quant_server.py` automatically (or lets you pick them via a native file
   dialog), remembers the choice per machine, and offers to install `flask`
@@ -111,8 +137,10 @@ that runs only on `127.0.0.1` — nothing leaves your machine.
 
 ## Quickstart
 
-1. Copy `quant_server.py`, `start_server.bat` and `icon.png` into (or next
-   to) your ComfyUI Python environment.
+1. Copy the whole folder (`quant_server.py`, `templates/`, `static/`,
+   `fonts/`, `icon.png`, `start_server.bat`) into (or next to) your ComfyUI
+   Python environment. Since version 1.3 the app consists of several files:
+   `quant_server.py` needs the `templates` and `static` folders next to it.
 2. Double-click `start_server.bat`. First run: it locates or asks you to
    pick `python.exe`, checks/installs `flask` and `convert_to_quant`, then
    starts the server and opens your browser at `http://127.0.0.1:8877`.
@@ -130,7 +158,7 @@ python.exe quant_server.py
 1. **Select a model** from the searchable dropdown (populated from your
    configured folders) or type a path manually. If the architecture is
    recognized, a colored pill appears and the right layer-exclusion preset
-   is pre-selected.
+   is pre-selected. The size estimate next to it updates right away.
 2. **Pick a quantization format.** INT8 ConvRot is the default and the only
    format we've personally verified end-to-end in ComfyUI; the others are
    implemented per ctq's own documentation but not independently verified
@@ -142,8 +170,9 @@ python.exe quant_server.py
    mode override (Automatic / Always on / Always off).
 5. **Start quantization.** A centered job window shows live status and log
    output until the job finishes or errors; it keeps running if you
-   minimize it. Use **Cancel** (in the job window or the bottom bar) to
-   stop a running job.
+   minimize it. Start another model while one is running and it joins the
+   queue. Use **Cancel** (in the job window, the bottom bar or the queue
+   list) to stop a running job or remove a waiting one.
 
 ## Configuration
 
@@ -152,6 +181,7 @@ first run, and safe to back up or edit by hand:
 
 - `config.json` — model folders, ComfyUI installation path, optional `ctq`
   path override.
+- `presets.json` — your saved presets (created when you save the first one).
 - `start_server_config.txt` — the `python.exe` / `quant_server.py` paths
   the launcher remembered for this machine. Delete it to re-pick.
 - `logs/` — one file per quantization run.
@@ -162,7 +192,8 @@ regenerated automatically, which is also why they're gitignored here.
 ## Limitations
 
 - Only one quantization job runs at a time (by design — GPU/RAM
-  contention).
+  contention). Further jobs wait in the queue. The queue is kept in memory, so
+  restarting the server clears it (finished runs stay in `logs/`).
 - Format-level correctness beyond INT8 ConvRot hasn't been independently
   verified against official reference files — always sanity-check output
   in ComfyUI.
