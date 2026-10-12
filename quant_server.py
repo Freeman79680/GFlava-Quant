@@ -56,7 +56,7 @@ app = Flask(__name__, static_folder=None)
 # with a hint.
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "1.3"
+APP_VERSION = "1.3.1"
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
