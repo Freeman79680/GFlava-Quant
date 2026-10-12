@@ -1,4 +1,4 @@
-/* GFlava-Quant UI. Schriften liegen lokal unter /fonts, es gibt keine Anfragen ins Internet. */
+/* GFlava-Quant UI. Fonts live locally under /fonts, there are no requests to the internet. */
 @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 500 700; font-display: swap; src: url('/fonts/space-grotesk.woff2') format('woff2'); }
 @font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: 400 600; font-display: swap; src: url('/fonts/ibm-plex-sans.woff2') format('woff2'); }
 @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 600; font-display: swap; src: url('/fonts/jetbrains-mono.woff2') format('woff2'); }
@@ -25,7 +25,7 @@
   --code-text: #c9d6ee;
   --topbar-bg: #0a0b11;
   --violet: #a855f7;
-  /* Klein und kräftig: große, weiche Schatten wirkten wie Grafikfehler. Nur für schwebende Fenster. */
+  /* Small and strong: big, soft shadows looked like rendering glitches. Only for floating windows. */
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, .6), 0 2px 8px rgba(0, 0, 0, .45);
   --radius: 18px;
   --radius-sm: 11px;
@@ -57,7 +57,7 @@
   --violet: #7c3aed;
   --shadow-pop: 0 12px 32px rgba(30, 34, 60, .24), 0 2px 8px rgba(30, 34, 60, .16);
 }
-/* Minimal-Modus: keine Verläufe, eine einzige Akzentfarbe. */
+/* Minimal mode: no gradients, a single accent color. */
 :root[data-minimal] {
   --violet: var(--accent);
   --panel: var(--panel-solid);
@@ -88,7 +88,7 @@ mark { background: var(--accent-soft); color: inherit; border-radius: 3px; paddi
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
-/* ---------- Buttons & Eingaben ---------- */
+/* ---------- Buttons & inputs ---------- */
 button { background: none; border: 0; padding: 0; }
 .primary {
   border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
@@ -127,8 +127,8 @@ label, .field-label { font-weight: 600; font-size: 15px; }
 .inline-msg { margin-top: 10px; font-size: 14.5px; color: var(--err); }
 .inline-msg.ok { color: var(--ok); }
 
-/* ---------- Kopfzeile ---------- */
-/* Kein backdrop-filter (Glas): der machte Scrollen und Klicken spürbar träge. Deckende Flächen statt Unschärfe. */
+/* ---------- Top bar ---------- */
+/* No backdrop-filter (glass): it made scrolling and clicking noticeably sluggish. Opaque surfaces instead of blur. */
 .topbar { position: sticky; top: 0; z-index: 40; background: var(--topbar-bg); border-bottom: 1px solid var(--line); }
 .topbar-inner { max-width: 1160px; margin: 0 auto; padding: 11px clamp(14px, 3vw, 32px); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
@@ -164,7 +164,7 @@ label, .field-label { font-weight: 600; font-size: 15px; }
 .step { display: block; }
 
 /* ---------- Hero ---------- */
-/* Eigener Stapel über den folgenden Abschnitten: sonst verschwindet die Modell-Liste unter den Format-Karten. */
+/* Own stacking context above the following sections: otherwise the model list disappears under the format cards. */
 .hero { position: relative; z-index: 20; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); gap: clamp(22px, 4vw, 48px); align-items: start; }
 .hero > * { min-width: 0; }
 .hint code, .path-preview code, .q-sub, .q-name { overflow-wrap: anywhere; word-break: break-all; }
@@ -174,7 +174,7 @@ label, .field-label { font-weight: 600; font-size: 15px; }
 .explain summary, details.more summary { cursor: pointer; color: var(--ice); font-size: 14.5px; width: fit-content; }
 .explain p { margin-top: 10px; max-width: 62ch; }
 details.more { margin-top: 2px; } details.more .hint { margin-top: 8px; }
-.pick { position: relative; z-index: 5; padding-bottom: 18px; } /* über der Schrumpf-Karte, wenn beide untereinander stehen */
+.pick { position: relative; z-index: 5; padding-bottom: 18px; } /* above the shrink card when both are stacked */
 .meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; min-height: 30px; }
 .path-preview { margin-top: 6px; word-break: break-all; }
 .path-preview code { display: inline-block; max-width: 100%; }
@@ -189,7 +189,7 @@ details.more { margin-top: 2px; } details.more .hint { margin-top: 8px; }
 .combo-item-size { color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .combo-empty { padding: 14px 10px; color: var(--muted); font-size: 14.5px; }
 
-/* Bit-Raster: zeigt, wie stark das Format das Modell schrumpft */
+/* Bit grid: shows how much the format shrinks the model */
 .shrink { position: sticky; top: 84px; display: grid; gap: 18px; }
 .shrink-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
 .shrink-row { display: grid; gap: 10px; }
@@ -205,7 +205,7 @@ details.more { margin-top: 2px; } details.more .hint { margin-top: 8px; }
 .recommend { display: grid; gap: 8px; justify-items: start; padding-top: 4px; border-top: 1px solid var(--line); padding-top: 16px; }
 .recommend button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
 
-/* ---------- Voreinstellungen, Chips ---------- */
+/* ---------- Presets, chips ---------- */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 7px 14px; font-size: 14.5px; transition: background .15s, border-color .15s; }
 .chip:hover { background: var(--panel-2); border-color: var(--line-2); }
@@ -251,7 +251,7 @@ details.more { margin-top: 2px; } details.more .hint { margin-top: 8px; }
 .glossary dt { font-weight: 600; color: var(--text); }
 .glossary dd { color: var(--muted); font-size: 14.5px; max-width: 66ch; }
 
-/* ---------- Layer-Schutz ---------- */
+/* ---------- Layer protection ---------- */
 .detect-banner { border-left: 3px solid var(--ice); padding: 2px 0 2px 14px; margin-bottom: 18px; font-size: 15px; color: var(--muted); }
 .detect-banner.found { border-color: var(--ok); color: var(--text); }
 .detect-banner.unknown { border-color: var(--warn); color: var(--text); }
@@ -260,7 +260,7 @@ details.more { margin-top: 2px; } details.more .hint { margin-top: 8px; }
 .chip-group-title { font-weight: 600; font-size: 14.5px; margin-bottom: 8px; color: var(--ice); }
 .exclude-hint { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 
-/* ---------- Erweitert, Befehl, Logs ---------- */
+/* ---------- Advanced, command, logs ---------- */
 details.panel > summary { cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 18px; }
 details.panel[open] > summary { margin-bottom: 8px; }
 .code, pre.code, #log { font-family: var(--font-mono); font-size: 13px; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--line); border-radius: 13px; padding: 13px 15px; white-space: pre-wrap; word-break: break-all; margin: 12px 0 0; max-height: 360px; overflow: auto; }
@@ -273,7 +273,7 @@ details.panel[open] > summary { margin-bottom: 8px; }
 .logs-list > .hint { margin: 0; }
 .foot-stats { text-align: center; color: var(--muted); font-size: 13.5px; padding-bottom: 8px; }
 
-/* ---------- Warteschlange ---------- */
+/* ---------- Queue ---------- */
 .queue-list { display: grid; gap: 10px; }
 .queue-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
 .queue-item.running { border-color: var(--accent); background: var(--accent-soft); }
@@ -291,7 +291,7 @@ details.panel[open] > summary { margin-bottom: 8px; }
 .q-bar { grid-column: 1 / -1; height: 6px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 .q-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
 
-/* ---------- Aktionsleiste ---------- */
+/* ---------- Action bar ---------- */
 .action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; padding: 0 clamp(8px, 2vw, 24px) 12px; pointer-events: none; }
 .action-bar-inner { pointer-events: auto; max-width: 1160px; margin: 0 auto; display: flex; align-items: center; gap: 16px; padding: 12px 14px 12px 20px; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 20px; }
 .action-main { flex: 1; min-width: 0; display: grid; gap: 6px; }
@@ -303,9 +303,9 @@ details.panel[open] > summary { margin-bottom: 8px; }
 .job-timer { font-size: 13.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .action-buttons { display: flex; gap: 8px; flex: none; }
 
-/* ---------- Auftragsfenster ---------- */
+/* ---------- Job window ---------- */
 .job-drawer { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(1000px, calc(100vw - 24px)); height: min(500px, calc(100vh - 24px)); z-index: 60; display: none; flex-direction: column; border-radius: 18px; box-shadow: var(--shadow-pop); overflow: hidden; isolation: isolate; }
-/* Farbverlauf-Rahmen rundum: ::before ist der Verlauf, ::after die Fläche 2px weiter innen. Dreht sich, solange ein Job läuft. */
+/* Gradient border all around: ::before is the gradient, ::after the surface 2px further in. Rotates while a job is running. */
 @property --drawer-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .job-drawer::before { content: ''; position: absolute; inset: 0; z-index: -2; border-radius: inherit; background: conic-gradient(from var(--drawer-angle), var(--accent), var(--violet), var(--ice), var(--violet), var(--accent)); }
 .job-drawer::after { content: ''; position: absolute; inset: 2px; z-index: -1; border-radius: 16px; background: var(--panel-solid); }
@@ -331,7 +331,7 @@ details.panel[open] > summary { margin-bottom: 8px; }
 .drawer-reopen-pill.status-error .dot { background: var(--err); animation: none; }
 .drawer-reopen-pill.status-cancelled .dot { background: var(--warn); animation: none; }
 
-/* ---------- Einstellungen ---------- */
+/* ---------- Settings ---------- */
 .settings-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 10px); width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 100px); overflow: auto; z-index: 70; background: var(--panel-solid); border: 1px solid var(--line-2); border-radius: 18px; box-shadow: var(--shadow-pop); }
 .settings-dropdown.open { display: block; }
 .modal { padding: 20px 22px 22px; }
@@ -357,7 +357,7 @@ details.panel[open] > summary { margin-bottom: 8px; }
 .check-toggle { display: flex; align-items: center; gap: 9px; margin-top: 14px; font-weight: 500; font-size: 14.5px; cursor: pointer; }
 .check-toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); flex: none; }
 
-/* ---------- Update-Hinweis ---------- */
+/* ---------- Update notice ---------- */
 .update-pill { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
 .update-pill .dot { background: var(--accent); }
 .update-banner { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; padding: 12px 14px 12px 18px; background: var(--panel-solid); border: 1px solid var(--accent); border-radius: var(--radius); }
@@ -370,7 +370,7 @@ details.panel[open] > summary { margin-bottom: 8px; }
 .toast { position: fixed; left: 50%; bottom: 112px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 18px; border-radius: 999px; font-weight: 600; font-size: 14.5px; z-index: 80; opacity: 0; pointer-events: none; transition: opacity .25s; max-width: calc(100vw - 32px); text-align: center; }
 .toast.show { opacity: 1; }
 
-/* ---------- Responsive & Bewegung ---------- */
+/* ---------- Responsive & motion ---------- */
 @media (max-width: 900px) {
   .hero { grid-template-columns: minmax(0, 1fr); }
   .shrink { position: static; }

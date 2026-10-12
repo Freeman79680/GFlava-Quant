@@ -1,19 +1,19 @@
-/* GFlava-Quant: Logik der Oberfläche. Läuft ohne Build-Schritt direkt im Browser. */
+/* GFlava-Quant: UI logic. Runs without a build step, directly in the browser. */
 "use strict";
 
 /* =====================================================================
-   Zustand und Hilfsfunktionen
+   State and helper functions
    ===================================================================== */
 let FORMATS = {}, EXCLUDES = {};
 let MODELS = [], MODEL_ROOTS_COUNT = 0, LOGS_COUNT = 0;
 let CTQ_FOUND = false, CTQ_PATH = null;
 let PRESETS = [];
 
-// Aktuelle Auswahl. Dateipfade stehen in den Eingabefeldern, nicht hier.
+// Current selection. File paths live in the input fields, not here.
 const S = { format: 'int8_convrot', exclude: 'qwen21_custom' };
-let selectedModel = null;      // Eintrag aus der Modell-Liste (oder null bei Pfad von Hand)
-let MODEL_INFO = null;         // Ergebnis von /api/detect_model für die aktuelle Datei
-let DETECTED_KEY = null;       // erkannter Layer-Schutz (oder null)
+let selectedModel = null;      // entry from the model list (or null for a manually typed path)
+let MODEL_INFO = null;         // result of /api/detect_model for the current file
+let DETECTED_KEY = null;       // detected layer protection (or null)
 let DETECT_STATE = 'none';     // none | detecting | found | unknown
 let START_ERROR = '';
 
@@ -71,7 +71,11 @@ function applyStaticI18n() {
   document.title = 'GFlava-Quant';
   document.documentElement.lang = LANG;
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.innerHTML = t(el.dataset.i18n); });
-  document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  // Path examples: Windows notation only on Windows, otherwise the variant with the Posix suffix (if present).
+  document.querySelectorAll('[data-i18n-ph]').forEach((el) => {
+    const key = el.dataset.i18nPh, posixKey = key + 'Posix';
+    el.placeholder = t(!IS_WINDOWS && I18N.de[posixKey] !== undefined ? posixKey : key);
+  });
   document.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const txt = t(el.dataset.i18nTitle);
     el.title = txt; el.setAttribute('aria-label', txt);
@@ -79,15 +83,15 @@ function applyStaticI18n() {
 }
 
 /* =====================================================================
-   Theme, Minimal-Modus, Hintergrund
+   Theme, minimal mode, background
    ===================================================================== */
 const BG_PALETTES = {
   dark: { base: [10, 11, 17], stops: [[96, 32, 118], [36, 46, 124], [16, 96, 140]], strength: 0.5, dot: 'rgba(255,255,255,0.05)' },
   light: { base: [243, 244, 248], stops: [[206, 168, 232], [170, 184, 236], [152, 210, 232]], strength: 0.45, dot: 'rgba(20,24,40,0.07)' },
 };
 
-// Dreiecks-Mosaik als quantisierter Farbverlauf (Position und Helligkeit auf feste Stufen gerundet),
-// dazu das Punktraster. Statisch: es wird nur beim Laden, Theme-Wechsel und Skalieren neu gezeichnet.
+// Triangle mosaic as a quantized gradient (position and brightness rounded to fixed steps),
+// plus the dot grid. Static: it is only redrawn on load, theme change and resize.
 function drawBackground() {
   const cv = $('bgCanvas'); if (!cv) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -145,7 +149,7 @@ function applyMinimal() {
 function toggleMinimal() { MINIMAL = !MINIMAL; writeStored('minimal', MINIMAL ? '1' : '0'); withoutTransitions(applyMinimal); }
 
 /* =====================================================================
-   Einstellungen: Modell-Ordner, ComfyUI-Pfad, ctq-Pfad, Systemcheck
+   Settings: model folders, ComfyUI path, ctq path, system check
    ===================================================================== */
 let SETTINGS = { model_roots: [], comfyui_root: '', ctq_path_override: '' };
 let CTQ_AUTO_PATH = null, LAST_SYSTEM_CHECKS = null, LAST_CHECKED_AT = null;
@@ -178,7 +182,7 @@ function addModelRootFromPath(path) {
 }
 async function openSettings(showFirstRunHint) {
   settingsMsg('');
-  // Ergebnis der automatischen Prüfung beim Start gleich zeigen, statt eine leere Liste.
+  // Show the result of the automatic check at startup right away instead of an empty list.
   if (LAST_SYSTEM_CHECKS) renderSystemCheck(LAST_SYSTEM_CHECKS); else $('systemCheckList').innerHTML = '';
   try {
     const { data } = await api('/api/settings');
@@ -236,8 +240,8 @@ function renderCheckTime() {
   const time = new Date(LAST_CHECKED_AT * 1000).toLocaleTimeString(LANG === 'en' ? 'en-US' : 'de-DE', { hour: '2-digit', minute: '2-digit' });
   el.textContent = t('lastCheckedTemplate', time);
 }
-// silent: automatische Prüfung beim Start, zeigt nur bei Updates etwas an und darf ein
-// höchstens eine Stunde altes Ergebnis vom Server nehmen. Sonst: Knopf, prüft immer neu.
+// silent: automatic check at startup, shows something only when there are updates and may take
+// a result from the server that is at most an hour old. Otherwise: the button, always checks again.
 async function runSystemCheck(silent) {
   const btn = $('runSystemCheckBtn');
   if (!silent) { $('systemCheckList').innerHTML = `<div class="modal-hint">${t('settingsChecking')}</div>`; btn.disabled = true; }
@@ -252,9 +256,9 @@ async function runSystemCheck(silent) {
   } finally { btn.disabled = false; }
 }
 
-/* ---- Update-Hinweis: Pille in der Kopfzeile und Banner über der Seite ---- */
+/* ---- Update notice: pill in the top bar and banner above the page ---- */
 const availableUpdates = () => (LAST_SYSTEM_CHECKS || []).filter((c) => c.update_available);
-// Ausgeblendet wird nur genau dieser Stand. Kommt eine neuere Version, erscheint das Banner wieder.
+// Only exactly this state is hidden. If a newer version comes along, the banner reappears.
 const updateSignature = (list) => list.map((c) => c.id + ':' + (c.latest_version || '')).join('|');
 function renderUpdateNotice() {
   const list = availableUpdates(), pill = $('updatePill'), banner = $('updateBanner');
@@ -268,7 +272,7 @@ function renderUpdateNotice() {
 }
 async function showUpdates() {
   if (!settingsIsOpen()) await openSettings(false);
-  // Nur das Menü scrollen; scrollIntoView würde auch die Seite dahinter verschieben.
+  // Only scroll the menu; scrollIntoView would also move the page behind it.
   $('settingsOverlay').scrollTo({ top: $('updatesSection').offsetTop - 8, behavior: 'smooth' });
 }
 async function performCheckAction(id, action, btn) {
@@ -280,10 +284,15 @@ async function performCheckAction(id, action, btn) {
   await runSystemCheck();
   if (id === 'ctq') await loadConfig();
 }
-// Echte native Windows-Dialoge: der Server öffnet sie per PowerShell (siehe /api/browse_native).
+// Real native Windows dialogs: the server opens them via PowerShell (see /api/browse_native).
+// Linux and macOS have no such dialogs (data.unsupported): the path is then asked for via a text prompt.
 async function pickNative(body) {
   try {
     const { ok, data } = await api('/api/browse_native', body);
+    if (!ok && data.unsupported) {
+      const typed = window.prompt(t(body.mode === 'file' ? 'promptFilePath' : 'promptFolderPath'), body.initial_dir || '');
+      return typed ? typed.trim().replace(/^"(.*)"$/, '$1') || null : null;
+    }
     if (!ok) { settingsMsg(data.error || t('settingsActionFailed')); return null; }
     return data.path || null;
   } catch (e) { settingsMsg(t('settingsActionFailed')); return null; }
@@ -298,11 +307,11 @@ function renderCtqStatus() {
   else { txt.textContent = t('ctqMissingShort'); el.title = t('ctqMissing'); el.classList.add('missing'); }
 }
 /* =====================================================================
-   Format (Schritt 2) und Größenschätzung
+   Format (step 2) and size estimate
    ===================================================================== */
-// Effektive Bits pro Gewicht inklusive Skalen-Aufwand. Nur Näherung: daraus wird die Größenschätzung.
+// Effective bits per weight including the scale overhead. Only an approximation: the size estimate is derived from it.
 const FORMAT_BITS = { int8_convrot: 8, int8_tensorwise: 8, int8_block: 8.25, fp8: 8, nvfp4: 4.5, mxfp8: 8.25 };
-// Feste Reihenfolge der Karten (Flask liefert JSON-Schlüssel alphabetisch sortiert).
+// Fixed order of the cards (Flask returns JSON keys sorted alphabetically).
 const FORMAT_ORDER = ['int8_convrot', 'int8_tensorwise', 'int8_block', 'fp8', 'nvfp4', 'mxfp8'];
 const bitsOf = (key) => FORMAT_BITS[key] || 8;
 const pctOf = (key) => Math.round(bitsOf(key) / 16 * 100);
@@ -356,7 +365,7 @@ function setFormat(key) {
   onSettingsChanged();
 }
 
-// Bit-Raster und Größenschätzung im Hero.
+// Bit grid and size estimate in the hero.
 function updateShrink() {
   const key = S.format, bits = bitsOf(key);
   const src = $('srcCells'), tgt = $('tgtCells');
@@ -413,7 +422,7 @@ function applyRecommended() {
 }
 
 /* =====================================================================
-   Layer-Schutz (Schritt 3)
+   Layer protection (step 3)
    ===================================================================== */
 const CHIP_GROUPS = [
   ['groupImage', ['qwen21_custom', 'flux1_custom', 'sdxl_custom', 'ctq_qwen', 'ctq_zimage', 'ctq_zimage_refiner', 'ctq_boogu', 'ctq_anima', 'ctq_lens', 'ctq_flux2', 'ctq_distillation_large', 'ctq_distillation_small', 'ctq_nerf_large', 'ctq_nerf_small', 'ctq_radiance', 'ctq_krea2', 'ctq_ideogram4']],
@@ -490,7 +499,7 @@ function updateAdvancedHint() {
 }
 
 /* =====================================================================
-   Modellauswahl (Schritt 1)
+   Model selection (step 1)
    ===================================================================== */
 let comboVisibleItems = [], comboActiveIndex = -1, modelDetectSeq = 0, detectTimer = null;
 
@@ -552,7 +561,7 @@ function highlightActiveItem() {
     if (active) el.scrollIntoView({ block: 'nearest' });
   });
 }
-// Beim Anklicken des Feldes mit schon gewähltem Modell die ganze Liste zeigen (nicht nur den einen Treffer).
+// When the field is clicked with a model already selected, show the whole list (not just the one match).
 function openComboPanel(showAll) {
   const search = $('modelSearch'), value = search.value.trim();
   const isSelectedName = !!selectedModel && value === modelDisplayName(selectedModel);
@@ -570,7 +579,7 @@ function showOutputRow(show) {
   $('outputToggle').textContent = show ? t('outputToggleHide') : t('outputToggleShow');
 }
 
-// Name der Ausgabedatei, wenn das Feld leer bleibt (gleiche Regel wie auf dem Server).
+// Name of the output file if the field stays empty (same rule as on the server).
 function autoOutputPath() {
   const p = inputPathValue(); if (!p) return '';
   const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')), dot = p.lastIndexOf('.');
@@ -599,13 +608,13 @@ function setDetectState(state, key) {
   updateExcludeBanner(); updateRecommend();
 }
 
-// Liest den Header der gewählten Datei (Architektur + Größen) und setzt den passenden Layer-Schutz.
+// Reads the header of the selected file (architecture + sizes) and sets the matching layer protection.
 async function detectModel(path) {
   const seq = ++modelDetectSeq;
   MODEL_INFO = null; setDetectState('detecting'); updateShrink();
   try {
     const { ok, data } = await api('/api/detect_model?path=' + encodeURIComponent(path));
-    if (seq !== modelDetectSeq) return;           // inzwischen wurde etwas anderes gewählt
+    if (seq !== modelDetectSeq) return;           // something else was selected in the meantime
     if (!ok) { setDetectState('none'); updateShrink(); return; }
     MODEL_INFO = data;
     if (data.preset_key && EXCLUDES[data.preset_key]) {
@@ -624,7 +633,7 @@ function selectModel(m) {
   detectModel(m.path);
 }
 
-// Pfad von Hand: Datei erst nach kurzer Pause prüfen, nicht bei jedem Tastendruck.
+// Manually typed path: check the file only after a short pause, not on every keystroke.
 function onManualPathInput() {
   selectedModel = null; START_ERROR = '';
   if ($('modelSearch').value) $('modelSearch').value = '';
@@ -637,7 +646,7 @@ function onManualPathInput() {
 }
 
 /* =====================================================================
-   Voreinstellungen
+   Presets
    ===================================================================== */
 function getSettingsSnapshot() {
   return {
@@ -698,16 +707,21 @@ async function savePreset() {
 }
 
 /* =====================================================================
-   Befehlsvorschau
+   Command preview
    ===================================================================== */
-let SHELL = 'cmd', previewTimer = null, previewSeq = 0, LAST_CMD_TEXT = '';
+// Windows users get cmd, everyone else gets bash as the default of the command preview.
+const IS_WINDOWS = /^Win/i.test(navigator.platform || '') || /Windows/i.test(navigator.userAgent || '');
+let SHELL = IS_WINDOWS ? 'cmd' : 'sh', previewTimer = null, previewSeq = 0, LAST_CMD_TEXT = '';
 
 function shellQuote(x) {
-  if (x === '') return SHELL === 'ps' ? "''" : '""';
-  if (!/[\s"'&|<>()^%!;$`,]/.test(x)) return x;
-  return SHELL === 'ps' ? "'" + x.replace(/'/g, "''") + "'" : '"' + x.replace(/"/g, '\\"') + '"';
-}
-function requestBody() {
+  if (x === '') return SHELL === 'cmd' ? '""' : "''";
+  // bash/zsh also interpret backslash, *, ?, ~, #, {}, [] -- cmd and PowerShell don't (there backslashes are normal path characters).
+  const special = SHELL === 'sh' ? /[\s"'&|<>()^%!;$`,\\*?~#{}\[\]]/ : /[\s"'&|<>()^%!;$`,]/;
+  if (!special.test(x)) return x;
+  if (SHELL === 'ps') return "'" + x.replace(/'/g, "''") + "'";
+  if (SHELL === 'sh') return "'" + x.replace(/'/g, "'\\''") + "'";  // bash/zsh: everything is literal inside single quotes
+  return '"' + x.replace(/"/g, '\\"') + '"';
+}function requestBody() {
   const s = getSettingsSnapshot();
   return {
     input_path: inputPathValue(), output_path: outputPathValue(), format: s.format, exclude_preset: s.exclude_preset,
@@ -739,11 +753,14 @@ async function copyCommand() {
   catch (e) { toast(t('copyFailed')); }
 }
 function setShell(sh) {
-  SHELL = sh; $('shellCmd').setAttribute('aria-pressed', sh === 'cmd'); $('shellPs').setAttribute('aria-pressed', sh === 'ps'); refreshPreview();
+  SHELL = sh; syncShellButtons(); refreshPreview();
+}
+function syncShellButtons() {
+  $('shellCmd').setAttribute('aria-pressed', SHELL === 'cmd'); $('shellPs').setAttribute('aria-pressed', SHELL === 'ps'); $('shellSh').setAttribute('aria-pressed', SHELL === 'sh');
 }
 
 /* =====================================================================
-   Logs, ctq-Hilfe, Statistik
+   Logs, ctq help, statistics
    ===================================================================== */
 async function loadLogsList() {
   const box = $('logsList');
@@ -789,7 +806,7 @@ async function loadConfig() {
   renderCtqStatus(); renderFormatCards(); renderFormatDetail(); renderGroupsizeSeg(); renderChips(); updateExcludeHint(); updateShrink(); updateActionBar();
 }
 /* =====================================================================
-   Warteschlange, Auftragsfenster, Start
+   Queue, job window, start
    ===================================================================== */
 const ACTIVE_STATES = ['queued', 'starting', 'running'];
 const isFinal = (s) => !ACTIVE_STATES.includes(s);
@@ -865,7 +882,7 @@ function updateActionBar() {
   updateTimer();
 }
 
-/* ---- Auftragsfenster ---- */
+/* ---- Job window ---- */
 const drawerIsOpen = () => $('jobDrawer').classList.contains('open');
 function openDrawer() { $('jobDrawer').classList.add('open'); $('drawerReopenBtn').style.display = 'none'; $('drawerReopenBtn').hidden = true; }
 function minimizeDrawer() {
@@ -891,8 +908,8 @@ function setFocus(id, pinned, openIt) {
 }
 
 function pollFocus(jobId) {
-  // Eigene Generation statt setInterval: der nächste Abruf wird erst nach Abschluss des vorigen geplant,
-  // damit sich überlappende Antworten nicht gegenseitig mit veralteten Daten überschreiben.
+  // Own generation instead of setInterval: the next fetch is only scheduled after the previous one has finished,
+  // so that overlapping responses don't overwrite each other with stale data.
   const mine = ++focusGeneration;
   async function tick() {
     if (mine !== focusGeneration) return;
@@ -956,7 +973,7 @@ async function startJob() {
   finally { STARTING = false; updateActionBar(); }
 }
 
-// Fenster verschieben und in der Größe ändern.
+// Move and resize the window.
 (function setupJobDrawerDragAndResize() {
   const drawer = $('jobDrawer'), header = $('jobDrawerHeader'), handle = $('jobDrawerResizeHandle');
   const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
@@ -987,7 +1004,7 @@ async function startJob() {
 })();
 
 /* =====================================================================
-   Gemeinsame Aktualisierung, Sprache, Start
+   Shared update, language, start
    ===================================================================== */
 function onSettingsChanged() {
   updateModelPreview(); updateShrink(); renderPresets(); updateActionBar(); schedulePreview();
@@ -1046,6 +1063,7 @@ function bindEvents() {
   $('copyCmdBtn').addEventListener('click', copyCommand);
   $('shellCmd').addEventListener('click', () => setShell('cmd'));
   $('shellPs').addEventListener('click', () => setShell('ps'));
+  $('shellSh').addEventListener('click', () => setShell('sh')); syncShellButtons();
 
   $('themeToggleBtn').addEventListener('click', toggleTheme);
   $('minimalToggleBtn').addEventListener('click', toggleMinimal);

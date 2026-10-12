@@ -153,6 +153,11 @@ Prefer to run it by hand?
 python.exe quant_server.py
 ```
 
+**Linux / macOS:** run `./start_server.sh` (it uses `venv/bin/python` next to it, or
+`python3`; for your ComfyUI environment use
+`GFLAVA_PYTHON=~/ComfyUI/venv/bin/python ./start_server.sh`). It offers to install
+`flask` and `convert_to_quant`, then starts the server and opens the browser.
+
 ## Usage
 
 1. **Select a model** from the searchable dropdown (populated from your
@@ -197,8 +202,13 @@ regenerated automatically, which is also why they're gitignored here.
 - Format-level correctness beyond INT8 ConvRot hasn't been independently
   verified against official reference files — always sanity-check output
   in ComfyUI.
-- Windows-only (uses `System.Windows.Forms` dialogs via PowerShell for
-  native folder/file pickers, and Windows APIs for RAM detection).
+- Developed on Windows. Linux and macOS are supported through `start_server.sh`:
+  RAM detection uses `psutil` (or `/proc/meminfo` / `vm_stat`), cancelling kills
+  the whole process group, `ctq` is also looked up on the `PATH`, and since
+  there are no native pickers there, folder and file paths are typed into a prompt
+  instead (`~` works). The automated tests in `tests/` run on Windows, Linux
+  and macOS via GitHub Actions; the app itself has been used on Windows only, so
+  please report problems on the other systems.
 
 ## Acknowledgments
 

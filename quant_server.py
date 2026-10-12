@@ -1,35 +1,38 @@
 """
-Standalone lokales Quantisierungs-Tool fuer ComfyUI-Modelle.
+Standalone local quantization tool for ComfyUI models.
 
-Startet einen kleinen lokalen Webserver (nur auf deinem eigenen PC erreichbar,
-127.0.0.1) mit einer Oberflaeche im Browser. Du gibst dort den Pfad zu einer
-bf16-Modelldatei an, waehlst das gewuenschte Quantisierungsformat, und das
-Skript ruft im Hintergrund `ctq` (convert_to_quant) mit den passenden
-Parametern auf.
+Starts a small local web server (reachable only from your own PC,
+127.0.0.1) with a browser UI. There you enter the path to a bf16 model
+file and choose the quantization format, and the script runs `ctq`
+(convert_to_quant) in the background with the matching parameters.
 
-Fuer INT8-Tensorwise/ConvRot wird danach automatisch der Marker-Fix
-angewendet, den wir gemeinsam herausgefunden haben (ctq schreibt zwei
-zusaetzliche Felder in den `.comfy_quant`-Marker, die ComfyUI nicht kennt
-und deshalb den ganzen Marker verwirft -> "unet unexpected"-Warnung).
-Dieser Schritt kuerzt den Marker auf genau die Felder, die die offizielle
-Comfy-Org-Datei auch benutzt.
+For INT8 tensor-wise/ConvRot the marker fix is applied automatically
+afterwards (ctq writes two extra fields into the `.comfy_quant` marker that
+ComfyUI doesn't know, so it discards the whole marker -> "unet unexpected"
+warning). This step trims the marker to exactly the fields that the official
+Comfy-Org file uses as well.
 
-WICHTIG: Das hier ist eine lokale Anwendung, kein oeffentliches Web-Tool.
-Sie liest/schreibt Dateien auf DEINEM Rechner und ruft ein Programm
-(ctq) auf DEINEM Rechner auf. Das kann und darf nicht als gehostete
-Webseite laufen -- nur lokal, mit dem Python, das auch dein ComfyUI benutzt.
+IMPORTANT: This is a local application, not a public web tool. It reads and
+writes files on YOUR computer and runs a program (ctq) on YOUR computer. It
+cannot and must not run as a hosted website -- only locally, with the same
+Python that your ComfyUI uses.
 
-Start (im ComfyUI-Python):
-    "H:\\ComfyUI_windows_portable\\ComfyUI-Easy-Install\\python_embeded\\python.exe" -m pip install flask
-    "H:\\ComfyUI_windows_portable\\ComfyUI-Easy-Install\\python_embeded\\python.exe" quant_server.py
+Start (with the ComfyUI Python):
+    "C:\\ComfyUI_windows_portable\\python_embeded\\python.exe" -m pip install flask
+    "C:\\ComfyUI_windows_portable\\python_embeded\\python.exe" quant_server.py
+On Linux/macOS: ./start_server.sh, or python quant_server.py.
 
-Danach im Browser oeffnen: http://127.0.0.1:8877
+Then open in the browser: http://127.0.0.1:8877
 """
 
+import atexit
 import datetime
 import json
 import os
 import re
+import shutil
+import signal
+import ssl
 import struct
 import subprocess
 import sys
@@ -41,16 +44,16 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-# static_folder=None: /static/ wird unten von einer eigenen Route bedient (ohne Browser-Cache),
-# damit Aenderungen an style.css/app.js nach einem Neuladen sofort sichtbar sind.
+# static_folder=None: /static/ is served by a custom route below (without browser caching),
+# so changes to style.css/app.js are visible right after a reload.
 app = Flask(__name__, static_folder=None)
 
 # ---------------------------------------------------------------------------
-# Konfiguration: Modell-Ordner, ComfyUI-Installation, ctq-Pfad-Override.
-# Wird dauerhaft in config.json neben diesem Skript gespeichert, damit nichts
-# hart im Code hinterlegt werden muss und Aenderungen einen Server-Neustart
-# ueberleben. Beim allerersten Start gibt es noch keine Modell-Ordner -- die
-# Einstellungen oeffnen sich dann automatisch mit einem Hinweis.
+# Configuration: model folders, ComfyUI installation, ctq path override.
+# Stored permanently in config.json next to this script so nothing has to be
+# hardcoded in the code and changes survive a server restart. On the very first
+# start there are no model folders yet -- Settings then opens automatically
+# with a hint.
 # ---------------------------------------------------------------------------
 
 APP_VERSION = "1.3"
@@ -62,17 +65,26 @@ CONFIG_PATH = SCRIPT_DIR / "config.json"
 DEFAULT_MODEL_ROOTS = []
 
 
-def _guess_comfyui_root():
-    """Raet die ComfyUI-Installation ueber den Python-Interpreter (typisches
-    ComfyUI-Portable-Layout: python_embeded und ComfyUI liegen nebeneinander).
-    Nur ein Vorschlag -- der Nutzer kann das in den Einstellungen aendern."""
-    candidate = Path(sys.executable).parent.parent / "ComfyUI"
-    return str(candidate) if candidate.is_dir() else ""
+def _guess_comfyui_root(python_exe=None):
+    """Guesses the ComfyUI installation from the Python interpreter. Windows portable:
+    python_embeded and ComfyUI sit next to each other. Linux/macOS: usually a venv lives
+    in or next to the ComfyUI folder (ComfyUI/venv/bin/python or venv/bin/python next to
+    ComfyUI). Only a suggestion -- the user can change it in Settings."""
+    exe = Path(python_exe or sys.executable)
+    candidate = exe.parent.parent / "ComfyUI"
+    if candidate.is_dir():
+        return str(candidate)
+    for ancestor in list(exe.parents)[:4]:
+        if (ancestor / "custom_nodes").is_dir() and (ancestor / "main.py").is_file():
+            return str(ancestor)
+        if (ancestor / "ComfyUI" / "custom_nodes").is_dir():
+            return str(ancestor / "ComfyUI")
+    return ""
 
 
 def load_config():
-    """Liefert (config, existed_before) -- existed_before sagt, ob config.json
-    schon vor diesem Start da war (fuer die einmalige Erstlauf-Anzeige)."""
+    """Returns (config, existed_before) -- existed_before says whether config.json
+    was already there before this start (for the one-time first-run display)."""
     if CONFIG_PATH.is_file():
         try:
             data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
@@ -98,15 +110,15 @@ if not CONFIG_EXISTED_AT_START:
     save_config()
 
 # ---------------------------------------------------------------------------
-# ctq finden
+# Locating ctq
 # ---------------------------------------------------------------------------
 
 
 def find_ctq_executable(override=None):
-    """Sucht ctq(.exe). Ein manueller Override (aus den Einstellungen) geht
-    vor; sonst wird im Scripts-Ordner neben dem aktuellen Python-Interpreter
-    gesucht -- das passt zu jeder venv/embedded-python-Installation, egal wo
-    genau ComfyUI liegt, wir muessen den Pfad nicht hart hinterlegen.
+    """Looks for ctq(.exe). A manual override (from Settings) takes precedence;
+    otherwise the Scripts folder next to the current Python interpreter is searched
+    -- that fits any venv/embedded Python installation, no matter where exactly
+    ComfyUI lives, so we don't have to hardcode the path.
     """
     if override and Path(override).is_file():
         return override
@@ -120,27 +132,34 @@ def find_ctq_executable(override=None):
         py_dir.parent / "bin" / "ctq",
     ]
     for c in candidates:
-        if c.exists():
+        if c.is_file() and (os.name == "nt" or os.access(c, os.X_OK)):
             return str(c)
+    if os.name != "nt":
+        # Linux/macOS: "pip install --user" puts ctq in ~/.local/bin, not next to python.
+        found = shutil.which("ctq")
+        if found:
+            return found
+        local = Path.home() / ".local" / "bin" / "ctq"
+        if local.is_file() and os.access(local, os.X_OK):
+            return str(local)
     return None
 
 
 CTQ_EXE = find_ctq_executable(CONFIG.get("ctq_path_override"))
 INT8FAST_REPO_URL = "https://github.com/BobJohnson24/ComfyUI-INT8-Fast"
 INT8FAST_DIR_NAME = "ComfyUI-INT8-Fast"
-# Eigenes Repo: dort wird bei der Update-Pruefung das neueste Release abgefragt.
+# Our own repo: the update check asks it for the latest release.
 GFLAVA_REPO = "Freeman79680/GFlava-Quant"
 GFLAVA_RELEASES_URL = f"https://github.com/{GFLAVA_REPO}/releases"
 
 # ---------------------------------------------------------------------------
-# Quantisierungs-Formate
+# Quantization formats
 #
-# Jeder Eintrag: die ctq-Flags, die wir tatsaechlich in der Doku/den Beispielen
-# von convert_to_quant bestaetigt gesehen haben. "verified" markiert, was wir
-# in unserem eigenen Test tatsaechlich Ende-zu-Ende in ComfyUI geladen und
-# geprueft haben (aktuell nur INT8 ConvRot). Die anderen Formate sind nach
-# ctq's eigener Doku korrekt aufgerufen, aber wir haben ihr Marker-Format
-# nicht selbst verifiziert -- deshalb bleibt bei denen der Marker-Fix aus.
+# Each entry: the ctq flags we actually saw confirmed in the docs/examples of
+# convert_to_quant. "verified" marks what we actually loaded and checked
+# end-to-end in ComfyUI in our own test (currently only INT8 ConvRot). The other
+# formats are called correctly according to ctq's own docs, but we haven't
+# verified their marker format ourselves -- so the marker fix stays off for them.
 # ---------------------------------------------------------------------------
 
 FORMAT_PRESETS = {
@@ -182,8 +201,8 @@ FORMAT_PRESETS = {
         "description_en": "8-bit with learned rounding (SVD optimization) per small block of numbers "
                            "instead of per full row or tensor. Considerably slower to produce, but can be "
                            "more accurate on some models.",
-        # --scaling_mode block ist Pflicht, sonst ignoriert ctq --block_size komplett und
-        # quantisiert tensor-weise (per `ctq --help-experimental` bestaetigt).
+        # --scaling_mode block is required, otherwise ctq ignores --block_size entirely and
+        # quantizes tensor-wise (confirmed via `ctq --help-experimental`).
         "flags": ["--int8", "--scaling_mode", "block"],
         "needs_groupsize": False,
         "needs_blocksize": True,
@@ -230,13 +249,13 @@ FORMAT_PRESETS = {
     },
 }
 
-# Layer-Ausschluss-Presets. "regex" = eigener Wert fuer --exclude-layers
-# (bei "verified": true von uns Ende-zu-Ende getestet, sonst ein aus
-# bekannter/oeffentlich dokumentierter Architektur abgeleitetes Muster, das
-# wir NICHT selbst gegen eine offizielle Datei verglichen haben). "builtin" =
-# einer von ctq's eigenen Modell-Flags (siehe `ctq -hf`); die werden als
-# eigenstaendiges Flag angehaengt, nicht als --exclude-layers-Wert. "chip" =
-# Kurzname fuer die Schnellauswahl-Kacheln oben im Formular (optional).
+# Layer exclusion presets. "regex" = custom value for --exclude-layers
+# (with "verified": true we tested it end-to-end ourselves, otherwise it is a
+# pattern derived from a known/publicly documented architecture that we have
+# NOT compared against an official file). "builtin" = one of ctq's own model
+# flags (see `ctq -hf`); those are appended as a standalone flag, not as an
+# --exclude-layers value. "chip" = short name for the quick-select tiles at the
+# top of the form (optional).
 EXCLUDE_PRESETS = {
     "qwen21_custom": {
         "label": "Qwen-Image-2.1 (Single-Stream) -- empfohlen fuer deine Modelle",
@@ -264,10 +283,10 @@ EXCLUDE_PRESETS = {
     },
     "none": {"label": "Kein Ausschluss", "label_en": "No exclusion", "kind": "none", "value": None},
     "custom": {"label": "Eigenes Regex eingeben", "label_en": "Enter custom regex", "kind": "custom", "value": None},
-    # -- ctq eigene Modell-Presets (aus `ctq --help-filters`, Stand unserer Installation). --
-    # "filter_desc" ist woertlich die Beschreibung, die ctq selbst fuer dieses Preset ausgibt --
-    # nicht von uns interpretiert, damit hier nichts geraten wird. Ist bereits Englisch (ctq's
-    # eigene CLI-Ausgabe) und wird daher in beiden Sprachen unveraendert angezeigt.
+    # -- ctq's own model presets (from `ctq --help-filters`, as of our installation). --
+    # "filter_desc" is the description that ctq itself prints for this preset, verbatim --
+    # not interpreted by us, so nothing here is guessed. It is already English (ctq's
+    # own CLI output) and is therefore shown unchanged in both languages.
     "ctq_qwen": {
         "label": "ctq --qwen (aelteres Qwen Image, Doppel-Strom)",
         "label_en": "ctq --qwen (older Qwen Image, dual-stream)",
@@ -405,25 +424,42 @@ EXCLUDE_PRESETS = {
     },
 }
 
-# Welche Felder wir im .comfy_quant-Marker behalten, abhaengig vom "format"-
-# Wert, der IM Marker selbst steht. Nur fuer Formate, die wir selbst gegen
-# eine offizielle Comfy-Org-Datei verglichen haben.
+# Which fields we keep in the .comfy_quant marker, depending on the "format"
+# value stored IN the marker itself. Only for formats that we compared against
+# an official Comfy-Org file ourselves.
 MARKER_ALLOWED_FIELDS = {
     "int8_tensorwise": ["format", "convrot", "convrot_groupsize"],
 }
 
 # ---------------------------------------------------------------------------
-# Logs: jeder Quantisierungs-Lauf wird komplett und dauerhaft unter logs/
-# gespeichert (bleibt auch nach einem Server-Neustart erhalten), damit man
-# einen Lauf im Nachhinein noch nachvollziehen kann.
+# Logs: every quantization run is saved completely and permanently under logs/
+# (it survives a server restart too), so a run can be traced afterwards.
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Modell-Ordner fuer das Auswahl-Dropdown. Kommen jetzt aus CONFIG (siehe
-# Einstellungen im Browser), nicht mehr hart aus dem Code. Werden rekursiv
-# nach .safetensors durchsucht; das Dropdown zeigt zu jedem Modell an, aus
-# welchem Ordner (und ggf. welchem Unterordner) es stammt.
+# Model folders for the selection dropdown. They now come from CONFIG (see
+# Settings in the browser), no longer hardcoded. They are searched recursively
+# for .safetensors; the dropdown shows for every model which folder (and, if
+# applicable, which subfolder) it comes from.
 # ---------------------------------------------------------------------------
+
+
+def _find_safetensors(base):
+    """All .safetensors files under base. Follows symlinks to folders (on Linux/macOS model
+    folders are often symlinked; Path.rglob doesn't follow those) and ignores the
+    case of the extension (Linux distinguishes it, Windows doesn't)."""
+    found = []
+    seen = set()  # real paths of already visited folders -- prevents endless loops through symlink cycles
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
+        real = os.path.realpath(dirpath)
+        if real in seen:
+            dirnames[:] = []
+            continue
+        seen.add(real)
+        for name in filenames:
+            if name.lower().endswith(".safetensors"):
+                found.append(Path(dirpath) / name)
+    return found
 
 
 def scan_models():
@@ -433,7 +469,7 @@ def scan_models():
         if not base.is_dir():
             continue
         try:
-            found = list(base.rglob("*.safetensors"))
+            found = _find_safetensors(base)
         except OSError:
             continue
         for p in found:
@@ -458,19 +494,18 @@ def scan_models():
 
 
 # ---------------------------------------------------------------------------
-# Modelltyp-Erkennung: liest nur den JSON-Header einer .safetensors-Datei
-# (kein Laden von Tensor-Daten, daher auch bei grossen Modellen sehr
-# schnell) und prueft die Tensor-Namen gegen Signaturen, die entweder direkt
-# aus ctq's eigenen, installierten MODEL_FILTERS-Konstanten stammen (echte
-# Ground Truth -- siehe convert_to_quant/constants.py) oder von uns gegen
-# eine echte Datei verifiziert wurden (Qwen-Image 2.1 Single-Stream: keine
-# offizielle ctq-Konstante, da ctq's eigenes --qwen die AELTERE Dual-Stream-
-# Variante meint). Jede Regel verlangt ALLE "require"-Substrings und KEINEN
-# der "forbid"-Substrings in den Tensor-Namen -- lieber keine Erkennung als
-# eine falsche. Architekturen ohne eine wirklich unterscheidbare Signatur
-# (aktuell nur LENS -- zu aehnlich zu Qwen-Dual-Stream, teilt "img_mod"/
-# "time_text_embed"/"img_in" ohne ein eigenes eindeutiges Merkmal) sind
-# bewusst NICHT aufgenommen.
+# Model type detection: reads only the JSON header of a .safetensors file
+# (no tensor data is loaded, so it is very fast even for large models) and
+# checks the tensor names against signatures that either come directly from
+# ctq's own installed MODEL_FILTERS constants (real ground truth -- see
+# convert_to_quant/constants.py) or were verified by us against a real file
+# (Qwen-Image 2.1 single-stream: no official ctq constant, since ctq's own
+# --qwen means the OLDER dual-stream variant). Every rule requires ALL "require"
+# substrings and NONE of the "forbid" substrings in the tensor names -- better
+# no detection than a wrong one. Architectures without a truly distinguishable
+# signature (currently only LENS -- too similar to Qwen dual-stream, shares
+# "img_mod"/"time_text_embed"/"img_in" without a unique feature of its own)
+# are deliberately NOT included.
 # ---------------------------------------------------------------------------
 
 
@@ -484,32 +519,32 @@ def _get_ctq_constants():
 
 def build_model_detection_registry():
     registry = [
-        # Gegen eine echte qwen_image_2.1_bf16.safetensors verifiziert: 32
-        # Bloecke mit transformer_blocks.N.img_mlp.*, ein einzelnes
-        # modulation.1.weight, txt_in.text_norm.weight -- kein img_mod/
-        # txt_mod wie bei ctq's aelterer Dual-Stream-Variante (--qwen).
+        # Verified against a real qwen_image_2.1_bf16.safetensors: 32
+        # blocks with transformer_blocks.N.img_mlp.*, a single
+        # modulation.1.weight, txt_in.text_norm.weight -- no img_mod/
+        # txt_mod as in ctq's older dual-stream variant (--qwen).
         {"preset_key": "qwen21_custom", "require": ["img_mlp", "txt_in.text_norm"], "forbid": ["img_mod", "txt_mod"]},
-        # Gegen eine echte flux1-dev-bnb-nf4.safetensors verifiziert:
-        # double_blocks/single_blocks mit img_mod.lin/txt_mod.lin pro Block --
-        # anders als Flux.2 (double_stream_modulation_img/txt, kein img_mod)
-        # und anders als ctq's Qwen-Dual-Stream (transformer_blocks statt
+        # Verified against a real flux1-dev-bnb-nf4.safetensors:
+        # double_blocks/single_blocks with img_mod.lin/txt_mod.lin per block --
+        # unlike Flux.2 (double_stream_modulation_img/txt, no img_mod)
+        # and unlike ctq's Qwen dual-stream (transformer_blocks instead of
         # double_blocks/single_blocks).
         {"preset_key": "flux1_custom", "require": ["double_blocks", "single_blocks", "img_mod", "txt_mod"],
          "forbid": ["stream_modulation"]},
-        # Gegen eine echte SDXL/Illustrious-Datei verifiziert: U-Net-Aufbau
-        # (input_blocks/middle_block/output_blocks/label_emb) kommt bei keiner
-        # DiT-Architektur (Flux/Qwen/Anima/Z-Image/...) vor -- voellig anderer
-        # Aufbau, daher besonders sicher zu erkennen.
+        # Verified against a real SDXL/Illustrious file: U-Net layout
+        # (input_blocks/middle_block/output_blocks/label_emb) does not occur in any
+        # DiT architecture (Flux/Qwen/Anima/Z-Image/...) -- a completely different
+        # layout, hence especially safe to recognize.
         {"preset_key": "sdxl_custom", "require": ["input_blocks", "middle_block", "output_blocks", "label_emb"],
          "forbid": []},
     ]
 
     if _get_ctq_constants() is not None:
-        # Ab hier: Substrings 1:1 aus ctq's eigenen MODEL_FILTERS/*_LAYER_KEYNAMES
-        # (siehe constants.py der installierten convert_to_quant-Version) --
-        # nicht von uns geraten, sondern das, was ctq selbst pro Architektur
-        # als charakteristisch ansieht. Gegen echte Anima-3.8B- und
-        # Flux.2-Klein-Dateien zusaetzlich manuell verifiziert.
+        # From here on: substrings 1:1 from ctq's own MODEL_FILTERS/*_LAYER_KEYNAMES
+        # (see constants.py of the installed convert_to_quant version) --
+        # not guessed by us, but what ctq itself considers characteristic for each
+        # architecture. Additionally verified manually against real Anima-3.8B and
+        # Flux.2-Klein files.
         registry += [
             {"preset_key": "ctq_anima", "require": ["llm_adapter", "adaln_modulation"], "forbid": []},
             {"preset_key": "ctq_flux2", "require": ["stream_modulation"], "forbid": []},
@@ -542,8 +577,8 @@ MODEL_DETECTION_REGISTRY = build_model_detection_registry()
 
 
 def read_safetensors_header(path):
-    """Liest nur den JSON-Header einer .safetensors-Datei (8-Byte-Laenge +
-    Header), keine Tensor-Daten -- schnell auch bei sehr grossen Modellen."""
+    """Reads only the JSON header of a .safetensors file (8-byte length +
+    header), no tensor data -- fast even for very large models."""
     with open(path, "rb") as f:
         header_size = struct.unpack("<Q", f.read(8))[0]
         if header_size <= 0 or header_size > 200_000_000:
@@ -556,9 +591,9 @@ def read_safetensors_keys(path):
 
 
 def analyze_safetensors_header(header):
-    """Fuer die Groessenschaetzung in der Oberflaeche: wie viele Bytes liegen
-    in 16-Bit- bzw. 32-Bit-Gewichten mit mindestens 2 Dimensionen (das sind
-    die Tensoren, die ctq ueberhaupt quantisieren kann). Reine Naeherung."""
+    """For the size estimate in the UI: how many bytes sit in 16-bit and 32-bit
+    weights with at least 2 dimensions (those are the tensors ctq can quantize at all).
+    A rough approximation only."""
     b16 = b32 = 0
     for key, info in header.items():
         if key == "__metadata__" or not isinstance(info, dict):
@@ -590,21 +625,20 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 RUN_LOCK = threading.Lock()
 
-# Warteschlange: Auftraege laufen strikt nacheinander (GPU/RAM-Konflikte
-# vermeiden), aber man kann beliebig viele einreihen. Ein einziger Worker-
-# Thread holt sich den naechsten Auftrag, sobald der vorige beendet ist. Die
-# Schlange liegt im Server, nicht im Browser -- ein geschlossener oder neu
-# geladener Tab verliert also nichts.
-JOB_QUEUE = []                      # job_ids in Reihenfolge, geschuetzt durch JOBS_LOCK
+# Queue: jobs run strictly one after another (to avoid GPU/RAM conflicts), but
+# any number can be queued. A single worker thread picks up the next job as soon
+# as the previous one has finished. The queue lives in the server, not in the
+# browser -- a closed or reloaded tab therefore loses nothing.
+JOB_QUEUE = []                      # job_ids in order, protected by JOBS_LOCK
 QUEUE_COND = threading.Condition(JOBS_LOCK)
 ACTIVE_STATES = ("queued", "starting", "running")
 FINAL_STATES = ("done", "error", "cancelled")
-MAX_FINISHED_JOBS = 30              # so viele beendete Jobs bleiben fuer die Anzeige im Speicher
+MAX_FINISHED_JOBS = 30              # this many finished jobs stay in memory for display
 _QUEUE_WORKER = {"thread": None}
 
 
 # ---------------------------------------------------------------------------
-# Marker-Fix (Schritt 16 aus unserem manuellen Vorgehen, jetzt automatisiert)
+# Marker fix (step 16 of our manual procedure, now automated)
 # ---------------------------------------------------------------------------
 
 
@@ -641,29 +675,72 @@ def fix_markers(path, log):
 
 
 # ---------------------------------------------------------------------------
-# Low-Memory-Modus: ctq's --low-memory betrifft laut `ctq --help` ausdruecklich
-# den System-RAM ("streaming tensor loading to reduce RAM usage, recommended
-# for models >50% of available RAM"), NICHT den VRAM der Grafikkarte. Wir
-# haben das im installierten ctq-Quellcode nachgeprueft
-# (utils/memory_efficient_loader.py): ohne dieses Flag laedt ctq alle Tensoren
-# vorab in einen Python-Dict im RAM, mit Flag liest es sie einzeln von der
-# Platte. Die eigentliche GPU-Verarbeitung (converters/*.py) verschiebt so
-# oder so immer nur einen Gewichts-Tensor auf einmal auf die GPU und ruft
-# danach torch.cuda.empty_cache() auf -- das passiert automatisch und
-# unabhaengig von --low-memory, es gibt also nichts VRAM-Bezogenes zu
-# erkennen. Was wir automatisch erkennen koennen (und was ctq's eigener
-# Empfehlung entspricht): ob die Eingabedatei mehr als die Haelfte des
-# verfuegbaren System-RAM belegt.
+# Low-memory mode: according to `ctq --help`, ctq's --low-memory explicitly concerns
+# system RAM ("streaming tensor loading to reduce RAM usage, recommended
+# for models >50% of available RAM"), NOT the GPU's VRAM. We checked this in
+# the installed ctq source (utils/memory_efficient_loader.py): without this flag
+# ctq loads all tensors up front into a Python dict in RAM, with the flag it reads
+# them one by one from disk. The actual GPU processing (converters/*.py) moves only
+# one weight tensor at a time to the GPU either way and then calls
+# torch.cuda.empty_cache() -- that happens automatically and independently of
+# --low-memory, so there is nothing VRAM-related to detect. What we can detect
+# automatically (and what matches ctq's own recommendation) is whether the input
+# file takes up more than half of the available system RAM.
 # ---------------------------------------------------------------------------
 
 LOW_MEMORY_RAM_RATIO = 0.5
 
 
-def get_available_ram_bytes():
-    """Verfuegbarer physischer System-RAM in Bytes, oder None wenn nicht
-    bestimmbar (z.B. auf Nicht-Windows-Systemen)."""
-    if os.name != "nt":
+def _parse_meminfo(text):
+    """'MemAvailable' from the contents of /proc/meminfo (Linux) in bytes, otherwise None."""
+    m = re.search(r"^MemAvailable:\s+(\d+)\s*kB", text, re.MULTILINE)
+    return int(m.group(1)) * 1024 if m else None
+
+
+def _parse_vm_stat(text):
+    """Available RAM from the output of `vm_stat` (macOS) in bytes, otherwise None.
+    Free, inactive and speculative pages count as available (the system releases the
+    inactive ones immediately when needed)."""
+    size = re.search(r"page size of (\d+) bytes", text)
+    if not size:
         return None
+    pages = 0
+    found = False
+    for label in ("free", "inactive", "speculative"):
+        m = re.search(rf"^Pages {label}:\s+(\d+)", text, re.MULTILINE)
+        if m:
+            pages += int(m.group(1))
+            found = True
+    return pages * int(size.group(1)) if found else None
+
+
+def _get_available_ram_posix():
+    """Linux and macOS. psutil first (present in every ComfyUI environment, since ComfyUI
+    needs it itself), otherwise /proc/meminfo or vm_stat."""
+    try:
+        import psutil
+        return int(psutil.virtual_memory().available)
+    except Exception:
+        pass
+    try:
+        return _parse_meminfo(Path("/proc/meminfo").read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        pass
+    if sys.platform == "darwin":
+        code, out = _run_cmd(["vm_stat"], timeout=5)
+        if code == 0:
+            return _parse_vm_stat(out)
+    return None
+
+
+def get_available_ram_bytes():
+    """Available physical system RAM in bytes, or None if it cannot be
+    determined."""
+    if os.name != "nt":
+        try:
+            return _get_available_ram_posix()
+        except Exception:
+            return None
     try:
         import ctypes
 
@@ -690,8 +767,8 @@ def get_available_ram_bytes():
 
 
 def resolve_low_memory_flag(mode, input_path, log):
-    """Entscheidet, ob --low-memory an ctq uebergeben wird. mode ist "auto"
-    (RAM-basierte Erkennung), "on" (immer) oder "off" (nie)."""
+    """Decides whether --low-memory is passed to ctq. mode is "auto"
+    (RAM-based detection), "on" (always) or "off" (never)."""
     if mode == "on":
         log("Low-memory-Modus: manuell erzwungen (immer an).")
         return True
@@ -724,14 +801,14 @@ def resolve_low_memory_flag(mode, input_path, log):
 
 
 # ---------------------------------------------------------------------------
-# Job-Ausfuehrung
+# Job execution
 # ---------------------------------------------------------------------------
 
 
 def build_ctq_command(program, input_path, output_path, format_key, exclude_arg,
                       extra_builtin_flag, convrot_groupsize, block_size, extra_args, low_memory):
-    """Baut die ctq-Argumentliste. Wird vom echten Lauf UND von der
-    Befehlsvorschau benutzt, damit beide garantiert identisch sind."""
+    """Builds the ctq argument list. Used by the real run AND by the
+    command preview so that both are guaranteed to be identical."""
     fmt = FORMAT_PRESETS[format_key]
     cmd = [program, "-i", input_path, "-o", output_path]
     cmd += list(fmt["flags"])
@@ -773,8 +850,8 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
 
     with JOBS_LOCK:
         JOBS[job_id]["log_file"] = log_filename
-    # Nur eine Datei, die dieser Job selbst angelegt hat, darf beim Abbruch
-    # geloescht werden -- eine schon vorhandene Datei des Nutzers nie.
+    # Only a file that this job created itself may be deleted on cancel --
+    # never a file the user already had.
     output_existed_before = os.path.exists(output_path)
 
     def cancel_requested():
@@ -824,9 +901,11 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
         if cancel_requested():
             finish_cancelled()
             return
+        # On Linux/macOS ctq gets its own process group so that "Cancel" also ends
+        # any child processes (Windows uses taskkill /T for that).
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, env=env,
+            text=True, bufsize=1, env=env, start_new_session=(os.name != "nt"),
         )
         with JOBS_LOCK:
             JOBS[job_id]["proc"] = proc
@@ -840,6 +919,7 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
                 if total:
                     with JOBS_LOCK:
                         JOBS[job_id]["progress"] = int(cur / total * 100)
+        proc.stdout.close()
         ret = proc.wait()
         with JOBS_LOCK:
             JOBS[job_id].pop("proc", None)
@@ -873,7 +953,7 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
 
 
 # ---------------------------------------------------------------------------
-# Flask-Routen
+# Flask routes
 # ---------------------------------------------------------------------------
 
 
@@ -954,8 +1034,8 @@ def api_config():
 
 @app.route("/api/ctq_help")
 def api_ctq_help():
-    """Zeigt die echte, fuer die installierte ctq-Version verbindliche Hilfe an,
-    statt dass wir hier im Tool raten muessen, welche Flags gerade existieren."""
+    """Shows the real help that is authoritative for the installed ctq version,
+    instead of us having to guess in this tool which flags currently exist."""
     if not CTQ_EXE:
         return jsonify({"error": "ctq wurde nicht gefunden."}), 400
     try:
@@ -971,13 +1051,20 @@ def api_ctq_help():
 PLACEHOLDER_INPUT = "MODELL.safetensors"
 
 
+def _clean_path(value):
+    """Cleans up a typed path: strips whitespace and quotes, turns a leading ~ into the
+    home folder (Linux/macOS users type ~/models/..., the shell doesn't do that here)."""
+    p = (value or "").strip().strip('"')
+    return os.path.expanduser(p) if p.startswith("~") else p
+
+
 def parse_quantize_request(data, strict=True):
-    """Liest und prueft die Formularwerte -- gemeinsam fuer den Start eines
-    Auftrags (strict=True) und die Befehlsvorschau (strict=False, dort darf
-    z.B. die Eingabedatei noch fehlen). Liefert (params, None) oder
-    (None, (fehlertext, http_status))."""
-    input_path = (data.get("input_path") or "").strip().strip('"')
-    output_path = (data.get("output_path") or "").strip().strip('"')
+    """Reads and validates the form values -- shared by starting a job
+    (strict=True) and the command preview (strict=False, where e.g. the input file
+    may still be missing). Returns (params, None) or
+    (None, (error_text, http_status))."""
+    input_path = _clean_path(data.get("input_path"))
+    output_path = _clean_path(data.get("output_path"))
     format_key = data.get("format", "int8_convrot")
     exclude_key = data.get("exclude_preset", "none")
     custom_regex = (data.get("custom_regex") or "").strip()
@@ -1002,7 +1089,7 @@ def parse_quantize_request(data, strict=True):
         convrot_groupsize = int(convrot_groupsize)
     except (TypeError, ValueError):
         return None, ("ConvRot-Gruppengroesse muss eine Zahl sein.", 400)
-    # ctq verlangt hier zwingend eine Potenz von 4 (per `ctq --help-experimental`).
+    # ctq strictly requires a power of 4 here (per `ctq --help-experimental`).
     if FORMAT_PRESETS[format_key].get("needs_groupsize") and convrot_groupsize not in (4, 16, 64, 256, 1024):
         return None, ("ConvRot-Gruppengroesse muss 4, 16, 64, 256 oder 1024 sein (Potenz von 4).", 400)
 
@@ -1019,8 +1106,8 @@ def parse_quantize_request(data, strict=True):
         output_path = f"{base}_{format_key}{ext}"
 
     if strict:
-        # Sonst wuerde ctq die noch unquantisierte Originaldatei ueberschreiben --
-        # unwiderruflich, da es keine Ruecksicherung gibt.
+        # Otherwise ctq would overwrite the not-yet-quantized original file --
+        # irreversibly, since there is no backup.
         if os.path.normcase(os.path.abspath(output_path)) == os.path.normcase(os.path.abspath(input_path)):
             return None, ("Ausgabedatei darf nicht mit der Eingabedatei identisch sein -- "
                           "das wuerde dein unquantisiertes Original unwiderruflich ueberschreiben.", 400)
@@ -1053,9 +1140,9 @@ def _norm_path(p):
 
 
 def _prune_finished_jobs():
-    """Beendete Jobs bis auf die letzten MAX_FINISHED_JOBS aus dem Speicher
-    entfernen (ihr komplettes Log liegt ohnehin dauerhaft unter logs/).
-    Aufruf nur mit gehaltenem JOBS_LOCK."""
+    """Remove finished jobs from memory except for the last MAX_FINISHED_JOBS
+    (their complete log is stored permanently under logs/ anyway).
+    Call only while holding JOBS_LOCK."""
     finished = sorted((v.get("finished_at", 0), k) for k, v in JOBS.items() if v.get("status") in FINAL_STATES)
     for _, k in finished[:-MAX_FINISHED_JOBS]:
         del JOBS[k]
@@ -1074,7 +1161,7 @@ def _queue_worker_loop():
             params = job["params"]
         try:
             run_job(job_id, *params)
-        except Exception as e:  # run_job faengt fast alles selbst ab -- das hier ist nur das Sicherheitsnetz
+        except Exception as e:  # run_job catches almost everything itself -- this is only the safety net
             with JOBS_LOCK:
                 JOBS[job_id].update({"status": "error", "error": f"Unerwarteter Fehler: {e}",
                                      "finished_at": time.time()})
@@ -1092,7 +1179,7 @@ def _ensure_queue_worker():
 
 @app.route("/api/quantize", methods=["POST"])
 def api_quantize():
-    """Reiht einen Auftrag ein. Ist nichts anderes aktiv, startet er sofort."""
+    """Queues a job. If nothing else is active, it starts immediately."""
     try:
         data = request.get_json(force=True)
     except Exception:
@@ -1129,8 +1216,8 @@ def api_quantize():
 
 @app.route("/api/preview", methods=["POST"])
 def api_preview():
-    """Zeigt den ctq-Befehl, den ein Auftrag mit diesen Einstellungen benutzen
-    wuerde -- gebaut mit derselben Funktion wie der echte Lauf."""
+    """Shows the ctq command a job with these settings would use --
+    built with the same function as the real run."""
     data = request.get_json(force=True, silent=True) or {}
     p, err = parse_quantize_request(data, strict=False)
     if err:
@@ -1143,7 +1230,7 @@ def api_preview():
     elif p["input_exists"]:
         low_memory = resolve_low_memory_flag("auto", p["input_path"], lambda m: None)
     else:
-        low_memory = False  # ohne Datei laesst sich "automatisch" nicht entscheiden
+        low_memory = False  # "automatic" cannot be decided without a file
     cmd = build_ctq_command("ctq", p["input_path"], p["output_path"], p["format_key"], p["exclude_arg"],
                             p["extra_builtin_flag"], p["convrot_groupsize"], p["block_size"],
                             p["extra_args"], low_memory)
@@ -1166,7 +1253,7 @@ def _job_summary(job_id, job, queue_pos):
 
 @app.route("/api/queue")
 def api_queue():
-    """Alle aktiven und die zuletzt beendeten Auftraege (ohne Log-Zeilen)."""
+    """All active and the most recently finished jobs (without log lines)."""
     with JOBS_LOCK:
         queue_pos = {jid: i + 1 for i, jid in enumerate(JOB_QUEUE)}
         items = [_job_summary(jid, j, queue_pos) for jid, j in JOBS.items()]
@@ -1204,8 +1291,8 @@ def api_cancel(job_id):
             return jsonify({"error": "Unbekannte job_id."}), 404
         status = job.get("status")
         if status == "queued":
-            # Noch nicht gestartet: es gibt weder einen Prozess noch eine Ausgabedatei
-            # aufzuraeumen -- einfach aus der Schlange nehmen.
+            # Not started yet: there is neither a process nor an output file
+            # to clean up -- just take it out of the queue.
             if job_id in JOB_QUEUE:
                 JOB_QUEUE.remove(job_id)
             job.update({"status": "cancelled", "error": "Job abgebrochen.", "finished_at": time.time()})
@@ -1214,21 +1301,44 @@ def api_cancel(job_id):
             return jsonify({"error": "Der Job laeuft nicht mehr."}), 409
         job["cancel_requested"] = True
         proc = job.get("proc")
-    if proc is not None and proc.poll() is None:
-        # ctq.exe ist nur ein Starter fuer einen eigenen python.exe-Kindprozess --
-        # ohne /T liefe die eigentliche Quantisierung auf der GPU weiter.
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                           capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        else:
-            proc.kill()
+    if proc is not None:
+        _kill_process_tree(proc)
     return jsonify({"ok": True})
 
 
+def _kill_process_tree(proc):
+    """Ends ctq together with its child processes. Windows: ctq.exe is only a launcher for its
+    own python.exe child process -- without /T the quantization would keep running on the GPU.
+    Linux/macOS: ctq runs in its own process group (start_new_session), which is ended as a whole."""
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                       capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        proc.kill()
+
+
+def _terminate_running_jobs():
+    """When the server exits (Ctrl+C, kill, terminal closed), take running ctq processes
+    along. Because of the separate process group on Linux/macOS, the terminal's signal no
+    longer reaches them on its own; ctq would otherwise keep computing orphaned on the GPU."""
+    with JOBS_LOCK:
+        procs = [j["proc"] for j in JOBS.values() if j.get("proc") is not None]
+    for proc in procs:
+        try:
+            _kill_process_tree(proc)
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------------------
-# Voreinstellungen: eigene Kombinationen aus Format, Layer-Schutz und
-# Erweitert-Werten, dauerhaft in presets.json neben diesem Skript (config.json
-# bleibt davon unberuehrt). Eingabe-/Ausgabedatei gehoeren bewusst NICHT dazu.
+# Presets: custom combinations of format, layer protection and Advanced values,
+# stored permanently in presets.json next to this script (config.json is left
+# untouched by this). Input/output files are deliberately NOT part of them.
 # ---------------------------------------------------------------------------
 
 PRESETS_PATH = SCRIPT_DIR / "presets.json"
@@ -1251,7 +1361,7 @@ def save_presets(presets):
 
 
 def clean_preset_settings(s):
-    """Nur bekannte Felder, nur gueltige Werte. Liefert (settings, None) oder (None, fehler)."""
+    """Only known fields, only valid values. Returns (settings, None) or (None, error)."""
     if not isinstance(s, dict):
         return None, "Ungueltige Einstellungen."
     fmt = s.get("format", "int8_convrot")
@@ -1327,12 +1437,11 @@ def api_models():
 
 @app.route("/api/detect_model")
 def api_detect_model():
-    """Liest den Tensor-Header der ausgewaehlten Datei und prueft ihn gegen
-    bekannte Architektur-Signaturen (siehe MODEL_DETECTION_REGISTRY). Wird
-    beim Auswaehlen eines Modells im Frontend aufgerufen, nicht beim
-    Auflisten aller Modelle -- deshalb spielt die Gesamtzahl der Modelle im
-    Ordner fuer die Geschwindigkeit keine Rolle."""
-    path = request.args.get("path", "")
+    """Reads the tensor header of the selected file and checks it against known
+    architecture signatures (see MODEL_DETECTION_REGISTRY). Called by the frontend
+    when a model is selected, not when listing all models -- so the total number of
+    models in the folder doesn't matter for speed."""
+    path = _clean_path(request.args.get("path", ""))
     if not path or not os.path.isfile(path):
         return jsonify({"error": "Datei nicht gefunden."}), 400
     try:
@@ -1349,8 +1458,8 @@ def api_detect_model():
 
 
 # ---------------------------------------------------------------------------
-# Einstellungen: Modell-Ordner, ComfyUI-Pfad, ctq-Override -- alles im
-# Browser konfigurierbar statt hart im Code, dauerhaft in config.json.
+# Settings: model folders, ComfyUI path, ctq override -- everything configurable
+# in the browser instead of hardcoded, stored permanently in config.json.
 # ---------------------------------------------------------------------------
 
 
@@ -1374,11 +1483,11 @@ def api_settings_save():
     except Exception:
         return jsonify({"error": "Ungueltige Anfrage."}), 400
 
-    # Erst ALLES validieren, ohne CONFIG anzufassen -- sonst wuerde bei z.B.
-    # gueltigen model_roots + ungueltigem comfyui_root im selben Request die
-    # model_roots-Aenderung schon im Live-Server uebernommen, aber wegen des
-    # Fehlers nie in config.json gespeichert (inkonsistenter Zustand, der
-    # erst beim naechsten Neustart wieder verschwindet).
+    # Validate EVERYTHING first without touching CONFIG -- otherwise, with e.g.
+    # valid model_roots + an invalid comfyui_root in the same request, the
+    # model_roots change would already be applied in the live server but never
+    # saved to config.json because of the error (an inconsistent state that only
+    # disappears at the next restart).
     new_model_roots = None
     if "model_roots" in data:
         roots = data["model_roots"]
@@ -1389,7 +1498,7 @@ def api_settings_save():
         for i, r in enumerate(roots):
             if not isinstance(r, dict):
                 continue
-            path = (r.get("path") or "").strip().strip('"')
+            path = _clean_path(r.get("path"))
             if not path:
                 continue
             if not os.path.isdir(path):
@@ -1406,18 +1515,18 @@ def api_settings_save():
 
     new_comfyui_root = None
     if "comfyui_root" in data:
-        new_comfyui_root = (data["comfyui_root"] or "").strip().strip('"')
+        new_comfyui_root = _clean_path(data["comfyui_root"])
         if new_comfyui_root and not os.path.isdir(new_comfyui_root):
             return jsonify({"error": f"ComfyUI-Ordner existiert nicht: {new_comfyui_root}"}), 400
 
     new_ctq_override = None
     if "ctq_path_override" in data:
-        override = (data["ctq_path_override"] or "").strip().strip('"')
+        override = _clean_path(data["ctq_path_override"])
         if override and not os.path.isfile(override):
             return jsonify({"error": f"Datei existiert nicht: {override}"}), 400
         new_ctq_override = override or None
 
-    # Alle Validierungen bestanden -- jetzt erst uebernehmen und speichern.
+    # All validations passed -- only now apply and save.
     if "model_roots" in data:
         CONFIG["model_roots"] = new_model_roots
     if "comfyui_root" in data:
@@ -1427,38 +1536,36 @@ def api_settings_save():
         CTQ_EXE = find_ctq_executable(new_ctq_override)
 
     save_config()
-    _invalidate_system_check_cache()  # ComfyUI-/ctq-Pfad kann sich geaendert haben
+    _invalidate_system_check_cache()  # the ComfyUI/ctq path may have changed
     return jsonify({"ok": True, "model_count": len(scan_models())})
 
 
 @app.route("/api/browse_native", methods=["POST"])
 def api_browse_native():
-    """Oeffnet einen ECHTEN Windows-Auswahldialog ueber ein eingebettetes
-    PowerShell, genau wie start_server.bat es schon fuer die python.exe-
-    Auswahl macht. Ein <input type=file> kann aus Sicherheitsgruenden keinen
-    echten Dateisystempfad liefern, daher der Umweg ueber den Server (der
-    laeuft nur auf 127.0.0.1). Blockiert den Request, bis der Nutzer
-    waehlt/abbricht -- threaded=True auf app.run() sorgt dafuer, dass der
-    Rest des Servers (z.B. ein laufender Quantisierungs-Job) davon
-    unberuehrt bleibt.
+    """Opens a REAL Windows picker dialog via an embedded PowerShell, just like
+    start_server.bat already does for the python.exe selection. An <input type=file>
+    cannot return a real file system path for security reasons, hence the detour via
+    the server (which only listens on 127.0.0.1). Blocks the request until the user
+    picks/cancels -- threaded=True on app.run() makes sure that the rest of the
+    server (e.g. a running quantization job) is unaffected.
 
-    Fuer Ordner wird bewusst KEIN FolderBrowserDialog verwendet -- der zeigt
-    unter PowerShell/WinForms den alten "Ordner suchen"-Baum-Dialog, nicht
-    den modernen Explorer-Stil, den man von einem Datei-Dialog kennt (siehe
-    ctq.exe/python.exe-Auswahl). Stattdessen der ueblicher Kniff: ein ganz
-    normaler OpenFileDialog im modernen Stil, bei dem Dateien komplett
-    ausgeblendet sind (Filter matcht nichts) und man den gewuenschten Ordner
-    einfach oeffnet, waehrend ein Platzhaltertext im Dateiname-Feld stehen
-    bleibt -- daraus wird danach der Ordnerpfad extrahiert.
+    For folders a FolderBrowserDialog is deliberately NOT used -- under PowerShell/WinForms
+    it shows the old "Browse for folder" tree dialog, not the modern Explorer style that
+    you know from a file dialog (see the ctq.exe/python.exe selection). Instead the usual
+    trick: a completely normal OpenFileDialog in the modern style, with files hidden
+    entirely (the filter matches nothing), where you simply open the desired folder while
+    a placeholder text stays in the file name field -- the folder path is extracted from
+    that afterwards.
     """
     if os.name != "nt":
-        return jsonify({"error": "Nativer Dialog ist nur unter Windows verfuegbar."}), 400
+        # "unsupported": the UI then asks for the path via a text prompt.
+        return jsonify({"error": "Nativer Dialog ist nur unter Windows verfuegbar.", "unsupported": True}), 400
     try:
         data = request.get_json(force=True) or {}
     except Exception:
         return jsonify({"error": "Ungueltige Anfrage."}), 400
 
-    mode = data.get("mode", "folder")  # "folder" oder "file"
+    mode = data.get("mode", "folder")  # "folder" or "file"
     title = str(data.get("title") or "").replace("'", "''")
     initial_dir = str(data.get("initial_dir") or "").strip()
     initial_dir = initial_dir if os.path.isdir(initial_dir) else ""
@@ -1507,8 +1614,8 @@ def api_browse_native():
 
 
 # ---------------------------------------------------------------------------
-# Systemcheck: prueft, ob ctq und das ComfyUI-INT8-Fast-Custom-Node
-# installiert sind und ob dafuer Updates verfuegbar sind.
+# System check: checks whether ctq and the ComfyUI-INT8-Fast custom node
+# are installed and whether updates are available for them.
 # ---------------------------------------------------------------------------
 
 
@@ -1594,7 +1701,7 @@ def check_int8fast_status():
 
 
 def _version_tuple(v):
-    """'v1.2.0' / '1.3' -> (1, 2, 0) / (1, 3, 0); None, wenn keine Versionsnummer drinsteht."""
+    """'v1.2.0' / '1.3' -> (1, 2, 0) / (1, 3, 0); None if there is no version number in it."""
     m = re.match(r"\s*v?(\d+(?:\.\d+)*)", str(v or ""))
     if not m:
         return None
@@ -1603,8 +1710,8 @@ def _version_tuple(v):
 
 
 def check_app_update():
-    """Vergleicht APP_VERSION mit dem neuesten Release auf GitHub. Installiert wird
-    nichts: der Nutzer bekommt nur den Link zum Release."""
+    """Compares APP_VERSION with the latest release on GitHub. Nothing is installed:
+    the user only gets the link to the release."""
     base = {"id": "app", "label": "GFlava-Quant", "label_en": "GFlava-Quant",
             "can_install": False, "can_update": False, "release_url": GFLAVA_RELEASES_URL}
     req = urllib.request.Request(
@@ -1612,7 +1719,14 @@ def check_app_update():
         headers={"Accept": "application/vnd.github+json", "User-Agent": f"GFlava-Quant/{APP_VERSION}"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        # Python from python.org on macOS ships without certificates (HTTPS verification
+        # then fails). certifi is present in every ComfyUI environment, so prefer it.
+        try:
+            import certifi
+            context = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            context = None
+        with urllib.request.urlopen(req, timeout=10, context=context) as resp:
             release = json.loads(resp.read().decode("utf-8"))
     except Exception:
         return {**base, "status": "unknown",
@@ -1641,9 +1755,9 @@ def check_app_update():
             "detail_en": f"Version {APP_VERSION} installed (up to date)."}
 
 
-# Ergebnis der letzten Pruefung. Die automatische Pruefung beim Laden der Seite nimmt es,
-# solange es hoechstens eine Stunde alt ist -- sonst fragt jedes Neuladen GitHub, PyPI und
-# git ab (GitHub erlaubt ohne Anmeldung nur 60 Anfragen pro Stunde).
+# Result of the last check. The automatic check when the page loads uses it as long
+# as it is at most an hour old -- otherwise every reload would query GitHub, PyPI and
+# git (GitHub allows only 60 requests per hour without authentication).
 SYSTEM_CHECK_MAX_AGE = 3600
 SYSTEM_CHECK_CACHE = {"checks": None, "checked_at": 0.0}
 SYSTEM_CHECK_LOCK = threading.Lock()
@@ -1656,8 +1770,8 @@ def _invalidate_system_check_cache():
 
 @app.route("/api/system_check")
 def api_system_check():
-    """?cached=1: automatische Pruefung, darf ein frisches Ergebnis wiederverwenden.
-    Ohne: der Knopf in den Einstellungen, prueft immer neu."""
+    """?cached=1: automatic check, may reuse a fresh result.
+    Without it: the button in Settings, always checks again."""
     use_cache = request.args.get("cached") == "1"
     with SYSTEM_CHECK_LOCK:
         fresh = (SYSTEM_CHECK_CACHE["checks"] is not None
@@ -1679,7 +1793,7 @@ def api_system_check_action():
         return jsonify({"error": "Ungueltige Anfrage."}), 400
     check_id = data.get("id")
     action = data.get("action")
-    _invalidate_system_check_cache()  # nach Installieren/Aktualisieren stimmt das alte Ergebnis nicht mehr
+    _invalidate_system_check_cache()  # after install/update the old result is no longer correct
 
     if check_id == "int8fast" and action == "install":
         d = _int8fast_dir()
@@ -1726,14 +1840,14 @@ def api_logs():
         try:
             stat = p.stat()
         except OSError:
-            continue  # z.B. zwischen Auflisten und hier geloescht
+            continue  # e.g. deleted between listing and here
         logs.append({"name": p.name, "size": stat.st_size, "mtime": stat.st_mtime})
     return jsonify({"logs": logs})
 
 
 @app.route("/api/logs/<path:name>")
 def api_log_file(name):
-    # Nur der Dateiname zaehlt -- verhindert Zugriff ausserhalb von logs/.
+    # Only the file name counts -- prevents access outside of logs/.
     fname = Path(name).name
     p = LOG_DIR / fname
     if not p.is_file():
@@ -1746,8 +1860,11 @@ if __name__ == "__main__":
     if not TEMPLATE_PATH.is_file() or not (STATIC_DIR / "app.js").is_file():
         print("WARNUNG: templates/index.html oder static/app.js fehlt -- bitte den kompletten Ordner kopieren.")
     print("Oeffne im Browser: http://127.0.0.1:8877")
-    # threaded=True, damit ein offener nativer Ordner-/Datei-Dialog (blockiert
-    # den Request, bis der Nutzer waehlt/abbricht) nicht den ganzen Server
-    # einfriert -- ein parallel laufender Quantisierungs-Job soll trotzdem
-    # weiter Status liefern koennen.
+    atexit.register(_terminate_running_jobs)
+    for _sig in ("SIGTERM", "SIGHUP"):  # SIGHUP only exists on Linux/macOS
+        if hasattr(signal, _sig):
+            signal.signal(getattr(signal, _sig), lambda signum, frame: sys.exit(0))
+    # threaded=True so that an open native folder/file dialog (blocks the request
+    # until the user picks/cancels) doesn't freeze the whole server -- a quantization
+    # job running in parallel should still be able to deliver status updates.
     app.run(host="127.0.0.1", port=8877, debug=False, threaded=True)

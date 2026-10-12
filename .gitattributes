@@ -1,0 +1,4 @@
+# Shell scripts must keep LF line endings or they fail on Linux/macOS
+# ("bad interpreter: /bin/bash^M"). The Windows launcher needs CRLF.
+*.sh  text eol=lf
+*.bat text eol=crlf

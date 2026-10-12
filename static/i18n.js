@@ -1,11 +1,11 @@
-/* Alle sichtbaren Texte der Oberfläche, Deutsch und Englisch.
-   Platzhalter-Funktionen bekommen die Werte als Argumente. Fehlt ein Schlüssel
-   in en, wird der deutsche Text verwendet. */
+/* All visible texts of the UI, German and English.
+   Placeholder functions receive the values as arguments. If a key is missing
+   in en, the German text is used. */
 "use strict";
 
 const I18N = {
   de: {
-    /* Kopfzeile, Hero */
+    /* Top bar, hero */
     heroTitle: "Mach dein Modell halb so groß.",
     heroLead: "Wähle ein Modell. GFlava-Quant stellt Format und Layer-Schutz passend ein und verkleinert die Datei für ComfyUI. Alles läuft auf deinem PC, nichts wird hochgeladen.",
     introSummary: "Was passiert beim Quantisieren?",
@@ -17,13 +17,14 @@ const I18N = {
     minimalOnTitle: "Minimales Design: keine Verläufe, eine Akzentfarbe",
     minimalOffTitle: "Volles Design mit Verläufen",
 
-    /* Schritt 1 */
+    /* Step 1 */
     stepModelTitle: "Welches Modell willst du verkleinern?",
     modelSelectLabel: "Modell auswählen",
     modelSearchPh: "Modell suchen (Name oder Ordner) ...",
     refreshModelsTitle: "Ordner neu einlesen",
     manualPathLabel: "Pfad zur Modelldatei (.safetensors)",
     manualPathPh: "z. B. C:\\ComfyUI\\models\\diffusion_models\\mein_modell.safetensors",
+    manualPathPhPosix: "z. B. ~/ComfyUI/models/diffusion_models/mein_modell.safetensors",
     manualPathHint: "Die Datei muss existieren. Das funktioniert auch mit eigenen oder gemergten Modellen, solange die Layer-Namen zum Layer-Schutz in Schritt 3 passen. Dieser Pfad ersetzt die Auswahl oben.",
     manualToggleShow: "Pfad stattdessen von Hand eingeben",
     manualToggleHide: "Zurück zur Modell-Liste",
@@ -43,7 +44,7 @@ const I18N = {
     typeDetecting: "Erkenne Modelltyp ...",
     typeDetected: (label) => "Erkannt: " + label,
 
-    /* Bit-Raster */
+    /* Bit grid */
     shrinkTitle: "So viel kleiner wird die Datei",
     shrinkOriginal: "Original",
     shrinkNoteModel: "Das ist eine Schätzung aus der Bitbreite. Geschützte Layer bleiben größer, die echte Datei liegt etwas darüber.",
@@ -57,7 +58,7 @@ const I18N = {
     recommendUndetected: "INT8 ConvRot. Das Modell wurde nicht erkannt, prüfe den Layer-Schutz in Schritt 3.",
     recommendHint: "Setzt INT8 ConvRot und den erkannten Layer-Schutz.",
 
-    /* Warteschlange */
+    /* Queue */
     queueTitle: "Warteschlange",
     queueHint: "Aufträge laufen nacheinander. Du kannst weitere hinzufügen, während einer läuft, und die Seite darf geschlossen werden.",
     qWaiting: (pos) => "Wartet, Platz " + pos,
@@ -71,7 +72,7 @@ const I18N = {
     qRemove: "Aus Warteschlange nehmen",
     queuedToast: (pos) => "Zur Warteschlange hinzugefügt, Platz " + pos + ".",
 
-    /* Voreinstellungen */
+    /* Presets */
     presetsTitle: "Voreinstellungen",
     presetsHint: "Speichere Format, Layer-Schutz und erweiterte Werte unter einem Namen. Dateipfade gehören nicht dazu.",
     presetSaveBtn: "Aktuelle Einstellungen speichern",
@@ -86,7 +87,7 @@ const I18N = {
     presetNameMissing: "Gib der Voreinstellung einen Namen.",
     presetError: "Voreinstellungen konnten nicht verarbeitet werden.",
 
-    /* Schritt 2 */
+    /* Step 2 */
     stepFormatTitle: "Wie klein soll es werden?",
     formatIntro: "Alle Formate außer NVFP4 halbieren die Dateigröße ungefähr. Unterschiede gibt es bei Qualität, Erzeugungsdauer und Grafikkarte.",
     tagRecommended: "Empfohlen",
@@ -118,7 +119,7 @@ const I18N = {
       ["Layer-Schutz", "Layer, die unquantisiert (bf16) bleiben, weil sie empfindlich auf Rundung reagieren, zum Beispiel Ein- und Ausgabe-Layer und Normalisierungen."],
     ],
 
-    /* Schritt 3 */
+    /* Step 3 */
     stepExcludeTitle: "Welche Layer sollen unverändert bleiben?",
     excludeIntro: "Manche Layer reagieren empfindlich auf Rundungsfehler, zum Beispiel Ein- und Ausgabe-Layer, Zeitschritt-Einbettungen und Normalisierungen. Sie bleiben in voller Genauigkeit (bf16), der Rest wird quantisiert. Wähle das Preset für dein Modell. Die englischen Beschreibungen zu den ctq-Presets stammen wörtlich aus ctq --help-filters.",
     excludeBannerNoModel: "Wähle in Schritt 1 ein Modell. Dann erkennt GFlava-Quant die Architektur und setzt den Layer-Schutz selbst.",
@@ -145,7 +146,7 @@ const I18N = {
     advancedBuiltinText: (value) => "Für <code>" + value + "</code> braucht ctq laut Dokumentation keine zusätzlichen Argumente, das Preset setzt die Layer-Ausschlüsse selbst. Allgemein hilfreich und modellunabhängig ist <code>--heur</code> (überspringt Layer, deren Seitenverhältnis oder Größe sich schlecht für Quantisierung eignen).",
     advancedRegexText: "Für dieses Community-Muster gibt es keine eigenen ctq-Hinweise, weil ctq die Architektur nicht kennt. Bei Bedarf kannst du zusätzlich <code>--heur</code> angeben.",
 
-    /* Erweitert */
+    /* Advanced */
     advancedSummary: "Erweitert (optionale ctq-Argumente)",
     lowMemoryLabel: "Low-Memory-Modus (RAM schonen beim Laden)",
     lowMemoryAuto: "Automatisch (empfohlen)",
@@ -159,7 +160,7 @@ const I18N = {
     ctqHelpHide: "ctq --help ausblenden",
     ctqHelpLoading: "Lade ...",
 
-    /* Befehl */
+    /* Command */
     previewSummary: "Befehl ansehen und kopieren",
     previewHint: "So ruft GFlava-Quant ctq mit deinen Einstellungen auf. Du kannst den Befehl auch selbst in einem Terminal ausführen, in dem ctq installiert ist.",
     copyCmdBtn: "Befehl kopieren",
@@ -179,7 +180,7 @@ const I18N = {
     logsLoadError: "Das Log konnte nicht geladen werden.",
     statsBarTemplate: (roots, models, logs) => roots + " Modell-Ordner, " + models + " Modelle, " + logs + " gespeicherte Logs",
 
-    /* Aktionsleiste, Aufträge */
+    /* Action bar, jobs */
     runBtn: "Quantisieren starten",
     runBtnQueue: "Zur Warteschlange hinzufügen",
     chooseModelFirst: "Wähle zuerst ein Modell.",
@@ -199,7 +200,7 @@ const I18N = {
     fullLogSavingAs: "Das vollständige Log wird gespeichert als ",
     startFailed: "Der Auftrag konnte nicht gestartet werden: ",
 
-    /* Einstellungen */
+    /* Settings */
     settingsTitle: "Einstellungen",
     closeTitle: "Schließen",
     settingsHeading: "Einstellungen",
@@ -211,10 +212,12 @@ const I18N = {
     settingsComfyuiHeading: "ComfyUI-Installation",
     settingsComfyuiHint: "Wird gebraucht, um custom_nodes zu finden, zum Beispiel für den Systemcheck von ComfyUI-INT8-Fast.",
     settingsComfyuiPh: "z. B. H:\\ComfyUI_windows_portable\\ComfyUI-Easy-Install\\ComfyUI",
+    settingsComfyuiPhPosix: "z. B. ~/ComfyUI",
     settingsCtqHeading: "ctq-Programm (nur falls es nicht automatisch gefunden wird)",
     settingsCtqPh: "z. B. ...\\python_embeded\\Scripts\\ctq.exe",
+    settingsCtqPhPosix: "z. B. ~/ComfyUI/venv/bin/ctq",
     settingsCtqAutoFoundTemplate: (path) => "Automatisch gefunden unter: " + path + ". Trag hier nur etwas ein, falls das nicht stimmt.",
-    settingsCtqAutoMissing: "Nicht automatisch gefunden. Trag den Pfad zu ctq.exe ein oder nutze „Durchsuchen“.",
+    settingsCtqAutoMissing: "Nicht automatisch gefunden. Trag den Pfad zu ctq (unter Windows ctq.exe) ein oder nutze „Durchsuchen“.",
     settingsCheckHeading: "Updates und Systemcheck",
     settingsCheckHint: "Prüft, ob es eine neue Version von GFlava-Quant gibt und ob ctq und der ComfyUI-INT8-Fast-Node installiert und aktuell sind (braucht Internet).",
     settingsRunCheck: "Nach Updates suchen",
@@ -237,6 +240,8 @@ const I18N = {
     settingsSaveError: "Speichern fehlgeschlagen.",
     settingsBrowse: "Durchsuchen",
     folderPickerHint: "Diesen Ordner wählen (auf Öffnen klicken)",
+    promptFolderPath: "Pfad zum Ordner (hier gibt es keinen Auswahldialog, bitte eintippen oder einfügen):",
+    promptFilePath: "Pfad zur Datei (hier gibt es keinen Auswahldialog, bitte eintippen oder einfügen):",
     firstRunBanner: "Willkommen! Stell unter Einstellungen mindestens einen Modell-Ordner ein.",
   },
 
@@ -258,6 +263,7 @@ const I18N = {
     refreshModelsTitle: "Rescan folders",
     manualPathLabel: "Path to the model file (.safetensors)",
     manualPathPh: "e.g. C:\\ComfyUI\\models\\diffusion_models\\my_model.safetensors",
+    manualPathPhPosix: "e.g. ~/ComfyUI/models/diffusion_models/my_model.safetensors",
     manualPathHint: "The file must exist. This also works with your own or merged models, as long as the layer names fit the layer protection in step 3. This path replaces the selection above.",
     manualToggleShow: "Enter the path by hand instead",
     manualToggleHide: "Back to the model list",
@@ -435,10 +441,12 @@ const I18N = {
     settingsComfyuiHeading: "ComfyUI installation",
     settingsComfyuiHint: "Needed to locate custom_nodes, for example for the ComfyUI-INT8-Fast system check.",
     settingsComfyuiPh: "e.g. H:\\ComfyUI_windows_portable\\ComfyUI-Easy-Install\\ComfyUI",
+    settingsComfyuiPhPosix: "e.g. ~/ComfyUI",
     settingsCtqHeading: "ctq program (only if it is not found automatically)",
     settingsCtqPh: "e.g. ...\\python_embeded\\Scripts\\ctq.exe",
+    settingsCtqPhPosix: "e.g. ~/ComfyUI/venv/bin/ctq",
     settingsCtqAutoFoundTemplate: (path) => "Found automatically at: " + path + ". Only enter something here if that is wrong.",
-    settingsCtqAutoMissing: "Not found automatically. Enter the path to ctq.exe or use “Browse”.",
+    settingsCtqAutoMissing: "Not found automatically. Enter the path to ctq (ctq.exe on Windows) or use “Browse”.",
     settingsCheckHeading: "Updates and system check",
     settingsCheckHint: "Checks whether there is a new version of GFlava-Quant and whether ctq and the ComfyUI-INT8-Fast node are installed and up to date (needs internet).",
     settingsRunCheck: "Check for updates",
@@ -461,6 +469,8 @@ const I18N = {
     settingsSaveError: "Saving failed.",
     settingsBrowse: "Browse",
     folderPickerHint: "Select this folder (click Open)",
+    promptFolderPath: "Path to the folder (there is no picker dialog on this system, please type or paste it):",
+    promptFilePath: "Path to the file (there is no picker dialog on this system, please type or paste it):",
     firstRunBanner: "Welcome! Set up at least one model folder under Settings.",
   },
 };

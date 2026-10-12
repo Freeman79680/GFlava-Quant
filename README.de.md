@@ -29,6 +29,8 @@ static/i18n.js         alle Texte auf Deutsch und Englisch
 static/app.js          Logik der Oberfläche
 fonts/, icon.png       Schriften und Logo
 start_server.bat       Starter für Windows
+start_server.sh        Starter für Linux und macOS
+tests/                 automatische Tests
 ```
 
 Fehlen `templates` oder `static`, meldet das `start_server.bat` beim Start,
@@ -73,6 +75,11 @@ Alternativ von Hand über PowerShell:
 ```powershell
 & "C:\ComfyUI_windows_portable\python_embeded\python.exe" "C:\Pfad\zu\GFlava-Quant\quant_server.py"
 ```
+
+**Linux / macOS:** `./start_server.sh` starten. Es nimmt `venv/bin/python` daneben oder
+`python3`; für deine ComfyUI-Umgebung z. B.
+`GFLAVA_PYTHON=~/ComfyUI/venv/bin/python ./start_server.sh`. Das Skript bietet an,
+`flask` und `convert_to_quant` zu installieren, startet den Server und öffnet den Browser.
 
 ## Benutzung
 
@@ -210,8 +217,13 @@ Modell-Ordner, ComfyUI- und ctq-Pfad liegen in `config.json` neben
   Logs bleiben.
 - Formate außer INT8 ConvRot sind nach ctq-Dokumentation aufgerufen, aber
   nicht von uns Ende zu Ende geprüft.
-- Nur Windows (native Datei-Dialoge über PowerShell, RAM-Erkennung über
-  Windows-APIs).
+- Entwickelt unter Windows. Linux und macOS laufen über `start_server.sh`: Die
+  RAM-Erkennung nutzt `psutil` (oder `/proc/meminfo` bzw. `vm_stat`), Abbrechen
+  beendet die ganze Prozessgruppe, `ctq` wird auch im `PATH` gesucht, und weil es
+  dort keine nativen Auswahldialoge gibt, werden Ordner- und Dateipfade in einem
+  Eingabefeld getippt (`~` funktioniert). Die automatischen Tests in `tests/`
+  laufen über GitHub Actions unter Windows, Linux und macOS; die App selbst wurde
+  bisher nur unter Windows benutzt, melde bitte Probleme auf den anderen Systemen.
 
 ## Schriftarten
 

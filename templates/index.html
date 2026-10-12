@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/icon.png">
 <script>
-  // Theme/Minimal-Modus vor dem ersten Zeichnen setzen, damit nichts aufblitzt.
+  // Set theme/minimal mode before the first paint so nothing flashes.
   (function () {
     try {
       if (localStorage.getItem('theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
@@ -101,7 +101,7 @@
 
 <main class="wrap" id="main">
 
-  <!-- Update-Hinweis: erscheint nach der automatischen Prüfung beim Start -->
+  <!-- Update notice: appears after the automatic check at startup -->
   <section class="update-banner" id="updateBanner" role="status" hidden>
     <div class="update-banner-text" id="updateBannerText"></div>
     <div class="update-banner-actions">
@@ -110,7 +110,7 @@
     </div>
   </section>
 
-  <!-- Erster Eindruck: Versprechen, Modellauswahl, sichtbare Wirkung -->
+  <!-- First impression: promise, model selection, visible effect -->
   <section class="hero" aria-labelledby="heroTitle">
     <div class="hero-text">
       <h1 id="heroTitle" data-i18n="heroTitle"></h1>
@@ -170,7 +170,7 @@
     </aside>
   </section>
 
-  <!-- Warteschlange: nur sichtbar, wenn es Aufträge gibt -->
+  <!-- Queue: only visible when there are jobs -->
   <section class="panel queue" id="queueSection" aria-labelledby="queueTitle" hidden>
     <div class="section-head">
       <h2 id="queueTitle" data-i18n="queueTitle"></h2>
@@ -179,7 +179,7 @@
     <ul class="queue-list" id="queueList"></ul>
   </section>
 
-  <!-- Schritt 2: Format -->
+  <!-- Step 2: Format -->
   <section class="step" id="stepFormat" aria-labelledby="stepFormatTitle">
     <div class="step-head"><span class="step-num" aria-hidden="true">2</span><h2 id="stepFormatTitle" data-i18n="stepFormatTitle"></h2></div>
     <p class="hint intro" data-i18n="formatIntro"></p>
@@ -204,7 +204,7 @@
     </details>
   </section>
 
-  <!-- Schritt 3: Layer-Schutz -->
+  <!-- Step 3: Layer protection -->
   <section class="step" id="stepExclude" aria-labelledby="stepExcludeTitle">
     <div class="step-head"><span class="step-num" aria-hidden="true">3</span><h2 id="stepExcludeTitle" data-i18n="stepExcludeTitle"></h2></div>
     <p class="hint intro" data-i18n="excludeIntro"></p>
@@ -224,7 +224,7 @@
     </div>
   </section>
 
-  <!-- Voreinstellungen -->
+  <!-- Presets -->
   <section class="panel presets" id="presetsSection" aria-labelledby="presetsTitle">
     <div class="section-head">
       <h2 id="presetsTitle" data-i18n="presetsTitle"></h2>
@@ -243,7 +243,7 @@
     <div class="inline-msg" id="presetMsg" role="status" hidden></div>
   </section>
 
-  <!-- Erweitert -->
+  <!-- Advanced -->
   <section class="step" aria-label="Advanced">
     <details class="panel advanced" id="advancedDetails">
       <summary data-i18n="advancedSummary"></summary>
@@ -267,7 +267,7 @@
     </details>
   </section>
 
-  <!-- Befehl ansehen -->
+  <!-- View command -->
   <section class="step" aria-label="Command">
     <details class="panel preview" id="previewDetails">
       <summary data-i18n="previewSummary"></summary>
@@ -276,6 +276,7 @@
         <div class="seg" role="group" aria-label="Shell">
           <button type="button" id="shellCmd" aria-pressed="true">cmd</button>
           <button type="button" id="shellPs" aria-pressed="false">PowerShell</button>
+          <button type="button" id="shellSh" aria-pressed="false">bash</button>
         </div>
         <button type="button" class="secondary" id="copyCmdBtn" data-i18n="copyCmdBtn"></button>
       </div>
@@ -284,7 +285,7 @@
     </details>
   </section>
 
-  <!-- Frühere Läufe -->
+  <!-- Previous runs -->
   <section class="panel logs" aria-labelledby="logsTitle">
     <div class="section-head">
       <h2 id="logsTitle" data-i18n="logsTitle"></h2>
