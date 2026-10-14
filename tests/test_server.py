@@ -96,6 +96,16 @@ class Paths(unittest.TestCase):
         found = q._find_safetensors(root)
         self.assertEqual([p.name for p in found], ["m.safetensors"])
 
+    def test_scan_models_reports_the_modification_time(self):
+        model = self.tmp / "m.safetensors"
+        model.write_bytes(b"x")
+        os.utime(model, (1_700_000_000, 1_700_000_000))
+        roots = [{"key": "k", "label": "L", "path": str(self.tmp)}]
+        with mock.patch.dict(q.CONFIG, {"model_roots": roots}):
+            entries = q.scan_models()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["mtime"], 1_700_000_000)
+
     def test_guess_comfyui_root_layouts(self):
         # Windows portable: python_embeded next to ComfyUI
         (self.tmp / "portable" / "ComfyUI").mkdir(parents=True)

@@ -505,6 +505,20 @@ let comboVisibleItems = [], comboActiveIndex = -1, modelDetectSeq = 0, detectTim
 
 const hasModel = () => !!inputPathValue();
 const modelDisplayName = (m) => (m.subdir ? m.subdir + '/' : '') + m.filename;
+// Sorting of the model list: name or modification date, ascending or descending. The list is flat
+// (not grouped by folder), so the order is global; the folder is shown on every row instead.
+const MODEL_SORTS = ['name-asc', 'name-desc', 'date-asc', 'date-desc'];
+let MODEL_SORT = readStored('modelSort', 'name-asc');
+if (!MODEL_SORTS.includes(MODEL_SORT)) MODEL_SORT = 'name-asc';
+const compareNames = (a, b) => modelDisplayName(a).localeCompare(modelDisplayName(b), undefined, { numeric: true, sensitivity: 'base' })
+  || String(a.root_label).localeCompare(String(b.root_label));
+function sortModels(list, mode) {
+  const [key, dir] = mode.split('-'), sign = dir === 'desc' ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    if (key === 'date') return sign * ((a.mtime || 0) - (b.mtime || 0)) || compareNames(a, b);
+    return sign * compareNames(a, b);
+  });
+}
 const modelMatches = (m, q) => !q || (modelDisplayName(m) + ' ' + m.root_label).toLowerCase().includes(q.toLowerCase());
 
 function highlightMatch(text, query) {
@@ -533,21 +547,21 @@ async function loadModels() {
 
 function renderComboPanel(query) {
   const panel = $('modelComboPanel'); panel.innerHTML = '';
-  const filtered = MODELS.filter((m) => modelMatches(m, query));
+  const filtered = sortModels(MODELS.filter((m) => modelMatches(m, query)), MODEL_SORT);
   comboVisibleItems = filtered; comboActiveIndex = filtered.length ? 0 : -1;
   if (!filtered.length) {
     const empty = document.createElement('div'); empty.className = 'combo-empty';
     empty.textContent = MODELS.length ? t('comboNoMatches', query) : t('comboNoModels'); panel.appendChild(empty); return;
   }
-  let lastGroup = null;
+  const locale = LANG === 'en' ? 'en-US' : 'de-DE';
   filtered.forEach((m, idx) => {
-    if (m.root_label !== lastGroup) {
-      lastGroup = m.root_label;
-      const label = document.createElement('div'); label.className = 'combo-group-label'; label.textContent = m.root_label; panel.appendChild(label);
-    }
     const item = document.createElement('div');
     item.className = 'combo-item'; item.dataset.idx = idx; item.setAttribute('role', 'option');
-    item.innerHTML = `<span>${highlightMatch(modelDisplayName(m), query)}</span><span class="combo-item-size">${m.size_mb != null ? escapeHtml(m.size_mb) + ' MB' : ''}</span>`;
+    const date = m.mtime ? new Date(m.mtime * 1000) : null;
+    const meta = [m.root_label].concat(date ? [date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' })] : []).join(' · ');
+    if (date) item.title = date.toLocaleString(locale);
+    item.innerHTML = `<span class="combo-item-main"><span class="combo-item-name">${highlightMatch(modelDisplayName(m), query)}</span><span class="combo-item-meta">${escapeHtml(meta)}</span></span>`
+      + `<span class="combo-item-size">${m.size_mb != null ? escapeHtml(m.size_mb) + ' MB' : ''}</span>`;
     item.addEventListener('mousedown', (e) => { e.preventDefault(); selectModel(m); });
     item.addEventListener('mouseenter', () => { comboActiveIndex = idx; highlightActiveItem(); });
     panel.appendChild(item);
@@ -1033,6 +1047,11 @@ function bindEvents() {
   $('drawerReopenBtn').addEventListener('click', openDrawer);
   $('ctqHelpBtn').addEventListener('click', showCtqHelp);
   $('refreshModelsBtn').addEventListener('click', loadModels);
+  $('modelSort').value = MODEL_SORT;
+  $('modelSort').addEventListener('change', (e) => {
+    MODEL_SORT = e.target.value; writeStored('modelSort', MODEL_SORT);
+    $('modelSearch').focus(); openComboPanel(true);  // show the list again, now in the new order
+  });
   $('manualPathToggle').addEventListener('click', () => showManualPath($('manualPathRow').hidden));
   $('outputToggle').addEventListener('click', () => showOutputRow($('outputPathRow').hidden));
   $('inputPath').addEventListener('input', onManualPathInput);

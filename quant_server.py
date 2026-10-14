@@ -56,7 +56,7 @@ app = Flask(__name__, static_folder=None)
 # with a hint.
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -477,7 +477,8 @@ def scan_models():
                 if not p.is_file():
                     continue
                 rel_dir = p.parent.relative_to(base)
-                size_mb = round(p.stat().st_size / (1024 * 1024), 1)
+                st = p.stat()
+                size_mb = round(st.st_size / (1024 * 1024), 1)
             except OSError:
                 continue
             subdir = "" if str(rel_dir) == "." else str(rel_dir).replace("\\", "/")
@@ -488,6 +489,7 @@ def scan_models():
                 "root_key": root["key"],
                 "root_label": root["label"],
                 "size_mb": size_mb,
+                "mtime": st.st_mtime,  # modification time (seconds), for sorting by date
             })
     entries.sort(key=lambda e: (e["root_label"], e["subdir"], e["filename"].lower()))
     return entries

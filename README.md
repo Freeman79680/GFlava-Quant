@@ -163,7 +163,7 @@ python.exe quant_server.py
 1. **Select a model** from the searchable dropdown (populated from your
    configured folders) or type a path manually. If the architecture is
    recognized, a colored pill appears and the right layer-exclusion preset
-   is pre-selected. The size estimate next to it updates right away.
+   is pre-selected. The size estimate next to it updates right away. The list can\n   be sorted by name or by modification date, ascending or descending (the choice\n   is remembered in the browser).
 2. **Pick a quantization format.** INT8 ConvRot is the default and the only
    format we've personally verified end-to-end in ComfyUI; the others are
    implemented per ctq's own documentation but not independently verified

@@ -93,7 +93,9 @@ Details stehen hinter „Erweitert“ und „Mehr dazu“.
    automatisch mit einem Hinweis. Beim Hinzufügen eines Ordners öffnet sich
    ein echter Windows-Ordnerdialog (ein normales `<input type=file>` verrät
    aus Sicherheitsgründen keinen echten Dateipfad). Der &#8635;-Knopf liest die
-   Ordner neu ein, zum Beispiel nach einem Download. Über „Pfad stattdessen von
+   Ordner neu ein, zum Beispiel nach einem Download. Die Liste lässt sich nach Name
+   oder Änderungsdatum sortieren, aufsteigend oder absteigend (die Wahl merkt sich
+   der Browser). Über „Pfad stattdessen von
    Hand eingeben“ geht auch ein beliebiger Pfad, über „Ausgabedatei ändern“ ein
    eigener Zielname. Ohne Angabe wird `<dateiname>_<format>.safetensors` im
    selben Ordner verwendet.
