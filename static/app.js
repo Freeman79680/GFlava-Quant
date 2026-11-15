@@ -425,7 +425,7 @@ function applyRecommended() {
    Layer protection (step 3)
    ===================================================================== */
 const CHIP_GROUPS = [
-  ['groupImage', ['qwen21_custom', 'flux1_custom', 'sdxl_custom', 'ctq_qwen', 'ctq_zimage', 'ctq_zimage_refiner', 'ctq_boogu', 'ctq_anima', 'ctq_lens', 'ctq_flux2', 'ctq_distillation_large', 'ctq_distillation_small', 'ctq_nerf_large', 'ctq_nerf_small', 'ctq_radiance', 'ctq_krea2', 'ctq_ideogram4']],
+  ['groupImage', ['qwen21_custom', 'flux1_custom', 'sdxl_custom', 'moss_image_custom', 'ctq_qwen', 'ctq_zimage', 'ctq_zimage_refiner', 'ctq_boogu', 'ctq_anima', 'ctq_lens', 'ctq_flux2', 'ctq_distillation_large', 'ctq_distillation_small', 'ctq_nerf_large', 'ctq_nerf_small', 'ctq_radiance', 'ctq_krea2', 'ctq_ideogram4']],
   ['groupVideo', ['ctq_wan', 'ctq_hunyuan', 'ctq_minimaxh3', 'ctq_ltxv2']],
   ['groupText', ['ctq_gemma4', 'ctq_qwen_vlm', 'ctq_t5xxl', 'ctq_mistral', 'ctq_visual', 'ctq_generic_text']],
 ];
@@ -501,7 +501,7 @@ function updateAdvancedHint() {
 /* =====================================================================
    Model selection (step 1)
    ===================================================================== */
-let comboVisibleItems = [], comboActiveIndex = -1, modelDetectSeq = 0, detectTimer = null;
+let modelDetectSeq = 0, detectTimer = null;
 
 const hasModel = () => !!inputPathValue();
 const modelDisplayName = (m) => (m.subdir ? m.subdir + '/' : '') + m.filename;
@@ -545,44 +545,68 @@ async function loadModels() {
   updateStatsBar();
 }
 
-function renderComboPanel(query) {
-  const panel = $('modelComboPanel'); panel.innerHTML = '';
-  const filtered = sortModels(MODELS.filter((m) => modelMatches(m, query)), MODEL_SORT);
-  comboVisibleItems = filtered; comboActiveIndex = filtered.length ? 0 : -1;
-  if (!filtered.length) {
-    const empty = document.createElement('div'); empty.className = 'combo-empty';
-    empty.textContent = MODELS.length ? t('comboNoMatches', query) : t('comboNoModels'); panel.appendChild(empty); return;
+// A searchable model dropdown, used twice: for the model of step 1 and for the model of "Back to bf16".
+// getSelected() returns the currently chosen model (or null); onPick(model) is called when one is clicked.
+function createModelCombo({ inputId, panelId, getSelected, onPick, showAllWhen }) {
+  let visible = [], active = -1;
+  const input = () => $(inputId), panel = () => $(panelId);
+
+  function highlight() {
+    panel().querySelectorAll('.combo-item').forEach((el) => {
+      const on = Number(el.dataset.idx) === active;
+      el.classList.toggle('active', on); el.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) el.scrollIntoView({ block: 'nearest' });
+    });
   }
-  const locale = LANG === 'en' ? 'en-US' : 'de-DE';
-  filtered.forEach((m, idx) => {
-    const item = document.createElement('div');
-    item.className = 'combo-item'; item.dataset.idx = idx; item.setAttribute('role', 'option');
-    const date = m.mtime ? new Date(m.mtime * 1000) : null;
-    const meta = [m.root_label].concat(date ? [date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' })] : []).join(' · ');
-    if (date) item.title = date.toLocaleString(locale);
-    item.innerHTML = `<span class="combo-item-main"><span class="combo-item-name">${highlightMatch(modelDisplayName(m), query)}</span><span class="combo-item-meta">${escapeHtml(meta)}</span></span>`
-      + `<span class="combo-item-size">${m.size_mb != null ? escapeHtml(m.size_mb) + ' MB' : ''}</span>`;
-    item.addEventListener('mousedown', (e) => { e.preventDefault(); selectModel(m); });
-    item.addEventListener('mouseenter', () => { comboActiveIndex = idx; highlightActiveItem(); });
-    panel.appendChild(item);
-  });
-  highlightActiveItem();
+  function render(query) {
+    const box = panel(); box.innerHTML = '';
+    const filtered = sortModels(MODELS.filter((m) => modelMatches(m, query)), MODEL_SORT);
+    visible = filtered; active = filtered.length ? 0 : -1;
+    if (!filtered.length) {
+      const empty = document.createElement('div'); empty.className = 'combo-empty';
+      empty.textContent = MODELS.length ? t('comboNoMatches', query) : t('comboNoModels'); box.appendChild(empty); return;
+    }
+    const locale = LANG === 'en' ? 'en-US' : 'de-DE';
+    filtered.forEach((m, idx) => {
+      const item = document.createElement('div');
+      item.className = 'combo-item'; item.dataset.idx = idx; item.setAttribute('role', 'option');
+      const date = m.mtime ? new Date(m.mtime * 1000) : null;
+      const meta = [m.root_label].concat(date ? [date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' })] : []).join(' · ');
+      if (date) item.title = date.toLocaleString(locale);
+      item.innerHTML = `<span class="combo-item-main"><span class="combo-item-name">${highlightMatch(modelDisplayName(m), query)}</span><span class="combo-item-meta">${escapeHtml(meta)}</span></span>`
+        + `<span class="combo-item-size">${m.size_mb != null ? escapeHtml(m.size_mb) + ' MB' : ''}</span>`;
+      item.addEventListener('mousedown', (e) => { e.preventDefault(); onPick(m); });
+      item.addEventListener('mouseenter', () => { active = idx; highlight(); });
+      box.appendChild(item);
+    });
+    highlight();
+  }
+  // When the field is clicked with a model already selected, show the whole list (not just the one match).
+  function open(showAll) {
+    const field = input(), value = field.value.trim(), selected = getSelected();
+    const isSelectedName = (!!selected && value === modelDisplayName(selected)) || (!!showAllWhen && showAllWhen(value));
+    render(showAll === true && isSelectedName ? '' : value);
+    panel().hidden = false; field.setAttribute('aria-expanded', 'true');
+  }
+  function close() { panel().hidden = true; input().setAttribute('aria-expanded', 'false'); }
+  function bind(onTyped) {
+    const field = input();
+    field.addEventListener('focus', () => { field.select(); open(true); });
+    field.addEventListener('input', () => { open(false); if (onTyped) onTyped(field.value); });
+    field.addEventListener('keydown', (e) => {
+      const isOpen = !panel().hidden;
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (!isOpen) { open(true); return; } if (active < visible.length - 1) active++; highlight(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (active > 0) active--; highlight(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (active >= 0 && visible[active]) onPick(visible[active]); }
+      else if (e.key === 'Escape') { close(); field.blur(); }
+    });
+    field.addEventListener('blur', () => setTimeout(() => { close(); const selected = getSelected(); if (selected) field.value = modelDisplayName(selected); }, 150));
+  }
+  return { open, close, bind };
 }
-function highlightActiveItem() {
-  document.querySelectorAll('#modelComboPanel .combo-item').forEach((el) => {
-    const active = Number(el.dataset.idx) === comboActiveIndex;
-    el.classList.toggle('active', active); el.setAttribute('aria-selected', active ? 'true' : 'false');
-    if (active) el.scrollIntoView({ block: 'nearest' });
-  });
-}
-// When the field is clicked with a model already selected, show the whole list (not just the one match).
-function openComboPanel(showAll) {
-  const search = $('modelSearch'), value = search.value.trim();
-  const isSelectedName = !!selectedModel && value === modelDisplayName(selectedModel);
-  renderComboPanel(showAll === true && isSelectedName ? '' : value);
-  $('modelComboPanel').hidden = false; search.setAttribute('aria-expanded', 'true');
-}
-function closeComboPanel() { $('modelComboPanel').hidden = true; $('modelSearch').setAttribute('aria-expanded', 'false'); }
+const modelCombo = createModelCombo({ inputId: 'modelSearch', panelId: 'modelComboPanel', getSelected: () => selectedModel, onPick: (m) => selectModel(m) });
+const openComboPanel = (showAll) => modelCombo.open(showAll);
+const closeComboPanel = () => modelCombo.close();
 
 function showManualPath(show) {
   $('manualPathRow').hidden = !show;
@@ -1018,6 +1042,103 @@ async function startJob() {
 })();
 
 /* =====================================================================
+   Back to bf16
+   ===================================================================== */
+const RESTORE = { path: '', selected: null, info: null, error: '', outputEdited: false, seq: 0, timer: null, busy: false };
+// A pasted path in the field must not hide the list: clicking the field shows all models, like in step 1.
+const restoreCombo = createModelCombo({ inputId: 'restoreSearch', panelId: 'restoreComboPanel', getSelected: () => RESTORE.selected, onPick: (m) => restorePick(m), showAllWhen: (v) => looksLikeModelPath(v) });
+// Anything that looks like a complete path to a .safetensors file is used directly instead of searching the list.
+const looksLikeModelPath = (v) => /^(?:[A-Za-z]:[\\/]|[\\/]|~)/.test(v.trim()) && /\.safetensors"?$/i.test(v.trim());
+
+function restorePick(m) {
+  RESTORE.selected = m; RESTORE.outputEdited = false;
+  $('restoreSearch').value = modelDisplayName(m); $('restoreManualPath').value = '';
+  restoreCombo.close(); restoreInspect(m.path);
+}
+function restoreTyped(value) {
+  clearTimeout(RESTORE.timer);
+  if (!looksLikeModelPath(value)) return;
+  RESTORE.timer = setTimeout(() => { RESTORE.selected = null; RESTORE.outputEdited = false; restoreInspect(value.trim().replace(/^"(.*)"$/, '$1')); }, 500);
+}
+async function restoreInspect(path) {
+  const seq = ++RESTORE.seq;
+  RESTORE.path = path; RESTORE.info = null; RESTORE.error = ''; restoreMessage('');
+  renderRestoreInfo(true); updateRestoreButton();
+  try {
+    const { ok, data } = await api('/api/restore/inspect?path=' + encodeURIComponent(path) + '&dtype=' + encodeURIComponent($('restoreDtype').value));
+    if (seq !== RESTORE.seq) return;
+    if (!ok) RESTORE.error = data.error || t('settingsActionFailed');
+    else {
+      RESTORE.info = data;
+      if (!RESTORE.outputEdited) $('restoreOutput').value = data.suggested_output || '';
+    }
+  } catch (e) { if (seq === RESTORE.seq) RESTORE.error = String((e && e.message) || e); }
+  renderRestoreInfo(false); updateRestoreButton();
+}
+function renderRestoreInfo(checking) {
+  const el = $('restoreInfo'), info = RESTORE.info;
+  el.className = 'hint restore-info';
+  if (checking) { el.textContent = t('restoreInfoChecking'); return; }
+  if (RESTORE.error) { el.classList.add('bad'); el.textContent = RESTORE.error; return; }
+  if (!info) { el.textContent = t('restoreInfoNone'); return; }
+  const dtype = $('restoreDtype').value;
+  if (info.problems && info.problems.length) { el.classList.add('bad'); el.textContent = t('restoreInfoProblem', info.problems.join('; ')); return; }
+  const unsupported = Object.entries(info.unsupported || {});
+  if (unsupported.length) { el.classList.add('bad'); el.textContent = t('restoreInfoUnsupported', unsupported.map(([name, n]) => name + ' (' + n + ')').join(', ')); return; }
+  if (!info.quantized_layers) { el.classList.add('bad'); el.textContent = t('restoreInfoNoQuant'); return; }
+  const kinds = info.kinds.map((k) => t('restoreKind', k.format, k.convrot, k.group) + (info.kinds.length > 1 ? ': ' + k.count : '')).join('; ');
+  el.classList.add('good');
+  el.textContent = t('restoreInfoOk', info.quantized_layers, kinds, formatBytes(info.input_bytes), formatBytes(info.output_bytes[dtype]), dtype);
+}
+function updateRestoreButton() {
+  $('restoreBtn').disabled = RESTORE.busy || !(RESTORE.info && RESTORE.info.supported) || !$('restoreOutput').value.trim();
+}
+function restoreMessage(text) {
+  const el = $('restoreMsg');
+  el.textContent = text || ''; el.hidden = !text;
+}
+async function startRestore() {
+  if (RESTORE.busy) return;
+  RESTORE.busy = true; restoreMessage(''); updateRestoreButton();
+  try {
+    const { ok, data } = await api('/api/restore', {
+      input_path: RESTORE.path, output_path: $('restoreOutput').value.trim(), dtype: $('restoreDtype').value, device: $('restoreDevice').value,
+    });
+    if (!ok) { restoreMessage(t('startFailed') + (data.error || '')); return; }
+    await refreshQueue();
+    if (!data.queued) setFocus(data.job_id, false, true);
+    else {
+      const q = QUEUE.find((j) => j.id === data.job_id);
+      toast(t('queuedToast', q && q.position ? q.position : data.position - 1));
+    }
+  } catch (e) { restoreMessage(t('startFailed') + String((e && e.message) || e)); }
+  finally { RESTORE.busy = false; updateRestoreButton(); }
+}
+function showRestoreManual(show, focus) {
+  $('restoreManualRow').hidden = !show;
+  $('restoreManualToggle').textContent = show ? t('manualToggleHide') : t('manualToggleShow');
+  if (show && focus) $('restoreManualPath').focus();
+}
+function bindRestoreEvents() {
+  restoreCombo.bind(restoreTyped);
+  $('refreshModelsBtn2').addEventListener('click', loadModels);
+  $('restoreManualToggle').addEventListener('click', () => showRestoreManual($('restoreManualRow').hidden, true));
+  $('restoreManualPath').addEventListener('input', (e) => {
+    const value = e.target.value;
+    clearTimeout(RESTORE.timer);
+    RESTORE.timer = setTimeout(() => {
+      const path = value.trim().replace(/^"(.*)"$/, '$1');
+      if (!path) return;
+      RESTORE.selected = null; RESTORE.outputEdited = false; $('restoreSearch').value = '';
+      restoreInspect(path);
+    }, 500);
+  });
+  $('restoreOutput').addEventListener('input', () => { RESTORE.outputEdited = true; updateRestoreButton(); });
+  $('restoreDtype').addEventListener('change', () => { if (RESTORE.path) restoreInspect(RESTORE.path); else renderRestoreInfo(false); });
+  $('restoreBtn').addEventListener('click', startRestore);
+}
+
+/* =====================================================================
    Shared update, language, start
    ===================================================================== */
 function onSettingsChanged() {
@@ -1031,6 +1152,7 @@ function applyLanguage() {
   $('modelSelectHint').textContent = MODELS.length ? t('modelsFoundTemplate', MODELS.length, MODEL_ROOTS_COUNT) : t('modelsNoneFound');
   if (DETECT_STATE === 'found') setDetectState('found', DETECTED_KEY);
   updateModelPreview(); updateShrink(); renderPresets(); renderQueue(); updateActionBar(); updateStatsBar(); loadLogsList(); refreshPreview();
+  renderRestoreInfo(false); showRestoreManual(!$('restoreManualRow').hidden);
   if (LAST_SYSTEM_CHECKS) renderSystemCheck(LAST_SYSTEM_CHECKS);
   renderUpdateNotice();
   if (settingsIsOpen()) { renderRootList(); updateCtqAutoHint(); }
@@ -1038,6 +1160,7 @@ function applyLanguage() {
 function setLanguage(lang) { LANG = lang; writeStored('lang', LANG); applyLanguage(); }
 
 function bindEvents() {
+  bindRestoreEvents();
   $('runBtn').addEventListener('click', startJob);
   $('cancelJobBarBtn').addEventListener('click', () => RUNNING && cancelJob(RUNNING.id, RUNNING.status));
   $('cancelJobDrawerBtn').addEventListener('click', () => {
@@ -1047,10 +1170,15 @@ function bindEvents() {
   $('drawerReopenBtn').addEventListener('click', openDrawer);
   $('ctqHelpBtn').addEventListener('click', showCtqHelp);
   $('refreshModelsBtn').addEventListener('click', loadModels);
-  $('modelSort').value = MODEL_SORT;
+  $('modelSort').value = MODEL_SORT; $('restoreSort').value = MODEL_SORT;
+  const setSort = (value) => { MODEL_SORT = value; writeStored('modelSort', value); $('modelSort').value = value; $('restoreSort').value = value; };
   $('modelSort').addEventListener('change', (e) => {
-    MODEL_SORT = e.target.value; writeStored('modelSort', MODEL_SORT);
+    setSort(e.target.value);
     $('modelSearch').focus(); openComboPanel(true);  // show the list again, now in the new order
+  });
+  $('restoreSort').addEventListener('change', (e) => {
+    setSort(e.target.value);
+    $('restoreSearch').focus(); restoreCombo.open(true);
   });
   $('manualPathToggle').addEventListener('click', () => showManualPath($('manualPathRow').hidden));
   $('outputToggle').addEventListener('click', () => showOutputRow($('outputPathRow').hidden));
@@ -1058,17 +1186,7 @@ function bindEvents() {
   $('outputPath').addEventListener('input', () => { START_ERROR = ''; updateModelPreview(); onSettingsChanged(); });
   $('recommendBtn').addEventListener('click', applyRecommended);
 
-  const search = $('modelSearch');
-  search.addEventListener('focus', () => { search.select(); openComboPanel(true); });
-  search.addEventListener('input', () => openComboPanel(false));
-  search.addEventListener('keydown', (e) => {
-    const open = !$('modelComboPanel').hidden;
-    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) { openComboPanel(true); return; } if (comboActiveIndex < comboVisibleItems.length - 1) comboActiveIndex++; highlightActiveItem(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); if (comboActiveIndex > 0) comboActiveIndex--; highlightActiveItem(); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (comboActiveIndex >= 0 && comboVisibleItems[comboActiveIndex]) selectModel(comboVisibleItems[comboActiveIndex]); }
-    else if (e.key === 'Escape') { closeComboPanel(); search.blur(); }
-  });
-  search.addEventListener('blur', () => setTimeout(() => { closeComboPanel(); if (selectedModel) search.value = modelDisplayName(selectedModel); }, 150));
+  modelCombo.bind();
 
   ['blockSize', 'customRegex', 'extraArgs'].forEach((id) => $(id).addEventListener('input', () => { START_ERROR = ''; onSettingsChanged(); }));
   $('lowMemoryMode').addEventListener('change', onSettingsChanged);
@@ -1110,7 +1228,7 @@ function bindEvents() {
 
 async function init() {
   applyTheme(); applyMinimal(); applyStaticI18n();
-  showManualPath(false); showOutputRow(false); renderGlossary(); bindEvents();
+  showManualPath(false); showOutputRow(false); renderGlossary(); bindEvents(); renderRestoreInfo(false); $('restoreManualToggle').textContent = t('manualToggleShow');
   updateModelPreview(); updateShrink(); updateActionBar(); updateExcludeBanner();
   try { await loadConfig(); } catch (e) { $('modelSelectHint').textContent = t('modelsScanError'); }
   loadModels(); loadLogsList(); loadPresets(); refreshQueue();

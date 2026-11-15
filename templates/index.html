@@ -294,6 +294,65 @@
     </details>
   </section>
 
+  <!-- Back to bf16: unpack a quantized (INT8) model into a normal full-precision file -->
+  <section class="step" aria-label="Back to bf16">
+    <details class="panel restore" id="restoreDetails">
+      <summary data-i18n="restoreSummary"></summary>
+      <p class="hint" data-i18n="restoreIntro"></p>
+      <div class="field">
+        <label for="restoreSearch" data-i18n="restoreModelLabel"></label>
+        <div class="combo" id="restoreCombo">
+          <div class="combo-row">
+            <input type="text" id="restoreSearch" role="combobox" aria-expanded="false" aria-controls="restoreComboPanel" aria-autocomplete="list" autocomplete="off" spellcheck="false" data-i18n-ph="restoreSearchPh">
+            <button type="button" class="secondary icon-btn" id="refreshModelsBtn2" data-i18n-title="refreshModelsTitle">&#8635;</button>
+          </div>
+          <div class="combo-panel" id="restoreComboPanel" role="listbox" hidden></div>
+        </div>
+        <div class="sort-row">
+          <label for="restoreSort" data-i18n="sortLabel"></label>
+          <select id="restoreSort" class="lang-select">
+            <option value="name-asc" data-i18n="sortNameAsc"></option>
+            <option value="name-desc" data-i18n="sortNameDesc"></option>
+            <option value="date-asc" data-i18n="sortDateAsc"></option>
+            <option value="date-desc" data-i18n="sortDateDesc"></option>
+          </select>
+        </div>
+        <div class="hint restore-info" id="restoreInfo" role="status"></div>
+        <div class="link-row">
+          <button type="button" class="link-btn" id="restoreManualToggle"></button>
+        </div>
+      </div>
+      <div class="field" id="restoreManualRow" hidden>
+        <label for="restoreManualPath" data-i18n="restoreManualLabel"></label>
+        <input type="text" id="restoreManualPath" class="mono" spellcheck="false" autocomplete="off" data-i18n-ph="restoreManualPh">
+      </div>
+      <div class="field">
+        <label for="restoreOutput" data-i18n="restoreOutputLabel"></label>
+        <input type="text" id="restoreOutput" class="mono" spellcheck="false" autocomplete="off" data-i18n-ph="restoreOutputPh">
+      </div>
+      <div class="field">
+        <label for="restoreDtype" data-i18n="restoreDtypeLabel"></label>
+        <select id="restoreDtype" class="narrow-select">
+          <option value="bf16" data-i18n="restoreDtypeBf16"></option>
+          <option value="fp16" data-i18n="restoreDtypeFp16"></option>
+          <option value="fp32" data-i18n="restoreDtypeFp32"></option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="restoreDevice" data-i18n="restoreDeviceLabel"></label>
+        <select id="restoreDevice" class="narrow-select">
+          <option value="auto" data-i18n="restoreDeviceGpu"></option>
+          <option value="cpu" data-i18n="restoreDeviceCpu"></option>
+        </select>
+      </div>
+      <p class="hint" data-i18n="restoreAccuracyNote"></p>
+      <div class="tools">
+        <button type="button" class="primary" id="restoreBtn" data-i18n="restoreBtn" disabled></button>
+      </div>
+      <div class="inline-msg" id="restoreMsg" role="status" hidden></div>
+    </details>
+  </section>
+
   <!-- Previous runs -->
   <section class="panel logs" aria-labelledby="logsTitle">
     <div class="section-head">

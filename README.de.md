@@ -23,6 +23,7 @@ einem Ordner liegen müssen:
 
 ```
 quant_server.py        Server (Flask), ctq-Aufruf, Warteschlange, Erkennung
+restore_bf16.py        "Zurück nach bf16": entpackt INT8-Modelle wieder
 templates/index.html   Gerüst der Seite
 static/style.css       Design (Dunkel, Hell, Minimal)
 static/i18n.js         alle Texte auf Deutsch und Englisch
@@ -115,9 +116,12 @@ Details stehen hinter „Erweitert“ und „Mehr dazu“.
    ComfyUI kontrollieren, bevor du dich darauf verlässt.
 4. **Layer-Schutz** (Schritt 3): legt fest, welche empfindlichen Layer
    unquantisiert bleiben. Zur Auswahl stehen alle Presets aus
-   `ctq --help-filters` deiner installierten Version plus drei eigene
-   Community-Regexes (Qwen-Image 2.1 Single-Stream, Flux.1, SDXL/Illustrious),
-   insgesamt 27. Bei den ctq-eigenen Presets zeigt der Hinweistext die
+   `ctq --help-filters` deiner installierten Version plus vier eigene
+   Regexes (Qwen-Image 2.1 Single-Stream, Flux.1, SDXL/Illustrious,
+   MOSS-Image), insgesamt 28. Der MOSS-Image-Regex ist aus den veröffentlichten
+   Tensor-Namen abgeleitet und noch nicht mit echten Gewichten getestet. Dafür
+   braucht es eine einzelne `.safetensors`-Datei (das `comfyui/export.py` des
+   Projekts fasst die heruntergeladenen Teile zusammen). Bei den ctq-eigenen Presets zeigt der Hinweistext die
    Original-Beschreibung aus `ctq --help-filters`.
 5. **Automatische Modelltyp-Erkennung**: Beim Auswählen eines Modells liest
    der Server nur den Tensor-Header der Datei (keine Tensor-Daten, daher auch
@@ -125,7 +129,8 @@ Details stehen hinter „Erweitert“ und „Mehr dazu“.
    bekannten Architektur-Signaturen. Passt eine eindeutig, erscheint eine
    farbige Pille („Erkannt: Anima“ o. ä.) und der passende Layer-Schutz wird
    gesetzt. Du kannst das jederzeit überschreiben. Erkannt werden Anima,
-   Flux.1, Flux.2, SDXL/Illustrious, Qwen-Image 2.1 (Single-Stream), ctqs
+   Flux.1, Flux.2, SDXL/Illustrious, Qwen-Image 2.1 (Single-Stream),
+   MOSS-Image (Base und SFT), ctqs
    ältere Qwen-Dual-Stream-Variante, Z-Image (+ Refiner), Wan, HunyuanVideo,
    Krea2, Boogu, Ideogram4, Radiance, NeRF (groß/klein), Chroma/distilled
    (groß/klein), MinimaxH3, LTXv2, Gemma4 und Qwen3-VL. Die Signaturen für
@@ -164,6 +169,50 @@ Details stehen hinter „Erweitert“ und „Mehr dazu“.
 Bei `INT8 ConvRot` und `INT8 Tensor-Wise` läuft danach automatisch der
 Marker-Fix: Er kürzt die `.comfy_quant`-Marker auf genau die Felder, die
 ComfyUI erwartet, damit das Ergebnis ohne die `unet unexpected`-Warnung lädt.
+
+## Zurück nach bf16
+
+Der Bereich „Zurück nach bf16“ wandelt ein INT8-Modell (ConvRot oder einfaches
+INT8) von ctq oder ein INT6-Modell (W6A8: 6-Bit-Gewichte in Paketen mit
+Gruppen-Skalen) wieder in eine normale bf16-, fp16- oder fp32-Datei um, zum
+Beispiel um es mit anderen Modellen zu mergen. Du wählst das quantisierte Modell
+aus der Liste (oder fügst den vollständigen Pfad ein), prüfst Ausgabename und
+Datentyp und startest. Die Umwandlung läuft als Auftrag in derselben
+Warteschlange (Log, Fortschritt und Abbrechen wie gewohnt).
+
+- **Genauigkeit:** Gerechnet wird mit derselben Formel, mit der ComfyUI solche
+  Dateien selbst entpackt, in fp32 ohne TF32. Auf dem Prozessor ist das Ergebnis
+  bit-identisch zu dem von ComfyUI. Auf der Grafikkarte (Voreinstellung, CUDA)
+  rechnen die Summen in anderer Reihenfolge, dadurch weichen etwa 0,1 % der
+  Werte um eine bf16-Stufe ab, ohne an Genauigkeit zu verlieren. Reicht der freie
+  Grafikspeicher nicht (z. B. weil ComfyUI läuft), rechnet das Tool die Schicht
+  automatisch auf dem Prozessor. Die Dauer hängt vor allem von der Festplatte ab,
+  weil die Datei gelesen und die größere bf16-Datei geschrieben werden muss. Die
+  Rundung der INT8-Quantisierung (etwa 0,9 % Abweichung vom Original) lässt sich
+  nicht rückgängig machen.
+- **Selbstprüfung:** Jede Schicht wird nach dem Entpacken noch einmal quantisiert.
+  Es müssen exakt dieselben INT8-Werte herauskommen, sonst steht eine Warnung im
+  Log.
+- **Unverändertes:** Alles, was nicht quantisiert wurde (Normen, Bias, geschützte
+  Schichten), wird Byte für Byte kopiert. Die Hilfs-Tensoren der Quantisierung und
+  die Quantisierungs-Metadaten fallen weg, die Schlüsselnamen bleiben gleich.
+- **Sicherheit:** Die Datei entsteht unter dem Namen `….partial` und wird erst am
+  Ende umbenannt. Eine vorhandene Datei wird nie überschrieben. Bricht man ab,
+  bleibt nichts übrig.
+- **Datentyp:** bf16 ist die Voreinstellung, fp16 ist etwas feiner, fp32 hat die
+  höchste Genauigkeit, die Datei ist dann doppelt so groß.
+- **INT6 (W6A8):** Die 6-Bit-Codes werden ausgepackt, mit den Gruppen- und
+  Zeilen-Skalen zurückgerechnet und wie bei INT8 zurückgedreht. Das Ergebnis ist
+  identisch mit der Rechenfunktion in `comfy_kitchen` (in fp32, ohne die
+  Zwischenrundung auf bf16, die deren bf16-Weg macht). Der Verlust ist größer als
+  bei INT8: etwa 2–3 % Abweichung vom Original.
+- **Aufmerksamkeits-Hinweise:** Quantisierte ComfyUI-Modelle tragen manchmal pro
+  Schicht einen winzigen Tensor `comfy_attention.config`. Das sind keine Gewichte,
+  sie werden nicht übernommen (Merge-Werkzeuge würden über einen uint8-Tensor
+  stolpern).
+- **Grenzen:** Andere Formate (4-Bit-W4A8, FP8, NVFP4, MXFP8, blockweises INT8)
+  werden vorerst mit einer klaren Meldung abgelehnt. Der Datentyp-Wechsel ändert
+  nur die Ausgabe, nicht, was schon an Genauigkeit verloren ist.
 
 ## Logs
 

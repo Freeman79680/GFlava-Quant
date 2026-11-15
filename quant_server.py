@@ -44,6 +44,17 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
+# The embedded Python of ComfyUI portable (python_embeded) has a ._pth file, and with that the folder of the
+# started script is NOT on sys.path -- so modules next to this file would not be found. Add the folder ourselves.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+try:  # the "Back to bf16" tool; if the file is missing the rest of the app keeps working
+    import restore_bf16
+except ImportError:
+    restore_bf16 = None
+
 # static_folder=None: /static/ is served by a custom route below (without browser caching),
 # so changes to style.css/app.js are visible right after a reload.
 app = Flask(__name__, static_folder=None)
@@ -56,7 +67,7 @@ app = Flask(__name__, static_folder=None)
 # with a hint.
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.4.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -279,6 +290,17 @@ EXCLUDE_PRESETS = {
         "chip": "SDXL / Illustrious",
         "kind": "regex",
         "value": r"(input_blocks\.0\.0|out\.2|time_embed|label_emb)",
+        "verified": False,
+    },
+    # MOSS-Image (OpenMOSS, Base and SFT share one architecture). Derived from the tensor names of the
+    # published weights: protects the input/output projections, the time and modulation layers and the
+    # text projection; the 42 main blocks (layers.N.proj.*) are quantized. Not tested with real weights.
+    "moss_image_custom": {
+        "label": "MOSS-Image (Base/SFT) -- Regex-Vorschlag, von uns nicht verifiziert",
+        "label_en": "MOSS-Image (Base/SFT) -- suggested regex, not verified by us",
+        "chip": "MOSS-Image",
+        "kind": "regex",
+        "value": r"(text_embedder|video_embedder|time_embedding|shared_block_modulation|video_head_modulation|final_linear_video)",
         "verified": False,
     },
     "none": {"label": "Kein Ausschluss", "label_en": "No exclusion", "kind": "none", "value": None},
@@ -538,6 +560,13 @@ def build_model_detection_registry():
         # DiT architecture (Flux/Qwen/Anima/Z-Image/...) -- a completely different
         # layout, hence especially safe to recognize.
         {"preset_key": "sdxl_custom", "require": ["input_blocks", "middle_block", "output_blocks", "label_emb"],
+         "forbid": []},
+        # MOSS-Image: the tensor names come from the published weights (header of the transformer
+        # shards, read without downloading the data) and from the keys the ComfyUI plugin checks
+        # when it recognizes the model. Unique names: video_embedder, shared_block_modulation and a
+        # text_embedder with its own blocks. Not tested against a complete single file yet.
+        {"preset_key": "moss_image_custom",
+         "require": ["video_embedder", "shared_block_modulation", "text_embedder.blocks", "layers.0.proj.ffn_up_gate"],
          "forbid": []},
     ]
 
@@ -830,8 +859,20 @@ def build_ctq_command(program, input_path, output_path, format_key, exclude_arg,
     return cmd
 
 
+RESTORE_FORMAT_KEY = "restore_bf16"   # job "format" of the Back-to-bf16 tool (not a quantization format)
+
+
+def build_restore_command(input_path, output_path, dtype, device):
+    """The command that runs restore_bf16.py with the Python of this server (it has torch)."""
+    return [sys.executable, "-W", "ignore::FutureWarning", str(SCRIPT_DIR / "restore_bf16.py"), "-i", input_path, "-o", output_path,
+            "--dtype", dtype, "--device", device]
+
+
 def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_builtin_flag,
             convrot_groupsize, block_size, extra_args, low_memory_mode):
+    """Runs one queued job. Normally that is a ctq quantization; with format_key RESTORE_FORMAT_KEY it
+    is the Back-to-bf16 conversion instead (its settings, {"dtype", "device"}, then come in extra_args)."""
+    is_restore = format_key == RESTORE_FORMAT_KEY
     started_at = datetime.datetime.now()
     log_filename = f"{started_at.strftime('%Y%m%d_%H%M%S')}_{job_id[:8]}_{Path(output_path).stem}.log"
     log_path = LOG_DIR / log_filename
@@ -862,15 +903,18 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
 
     def finish_cancelled():
         log("--- Job vom Nutzer abgebrochen ---")
-        if not output_existed_before and os.path.exists(output_path):
-            try:
-                os.remove(output_path)
-                log(f"Unvollstaendige Ausgabedatei entfernt: {output_path}")
-            except OSError as e:
-                log(f"Unvollstaendige Ausgabedatei konnte nicht entfernt werden: {e}")
+        # The restore tool writes under "<output>.partial" until it is complete.
+        leftovers = [output_path] + ([output_path + ".partial"] if is_restore else [])
+        for leftover in leftovers:
+            if (leftover != output_path or not output_existed_before) and os.path.exists(leftover):
+                try:
+                    os.remove(leftover)
+                    log(f"Unvollstaendige Ausgabedatei entfernt: {leftover}")
+                except OSError as e:
+                    log(f"Unvollstaendige Ausgabedatei konnte nicht entfernt werden: {e}")
         set_status("cancelled", error="Job abgebrochen.")
 
-    log(f"=== Quantisierungs-Job gestartet: {started_at.strftime('%Y-%m-%d %H:%M:%S')} ===")
+    log(f"=== {'Umwandlungs-Job (zurueck nach bf16)' if is_restore else 'Quantisierungs-Job'} gestartet: {started_at.strftime('%Y-%m-%d %H:%M:%S')} ===")
     log(f"Eingabe:  {input_path}")
     log(f"Ausgabe:  {output_path}")
     log(f"Format:   {format_key}")
@@ -882,17 +926,21 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
             set_status("error", error="Es laeuft bereits ein anderer Quantisierungs-Job. Bitte warten, bis er fertig ist.")
             return
 
-        if not CTQ_EXE:
-            log("FEHLER: ctq wurde nicht gefunden.")
-            set_status("error", error="ctq wurde nicht gefunden (Scripts-Ordner neben python.exe). "
-                                       "Erst 'pip install convert-to-quant' ausfuehren.")
-            return
+        if is_restore:
+            fmt = {}
+            cmd = build_restore_command(input_path, output_path, extra_args["dtype"], extra_args["device"])
+        else:
+            if not CTQ_EXE:
+                log("FEHLER: ctq wurde nicht gefunden.")
+                set_status("error", error="ctq wurde nicht gefunden (Scripts-Ordner neben python.exe). "
+                                           "Erst 'pip install convert-to-quant' ausfuehren.")
+                return
 
-        fmt = FORMAT_PRESETS[format_key]
-        low_memory = resolve_low_memory_flag(low_memory_mode, input_path, log)
-        cmd = build_ctq_command(CTQ_EXE, input_path, output_path, format_key, exclude_arg,
-                                extra_builtin_flag, convrot_groupsize, block_size, extra_args,
-                                low_memory)
+            fmt = FORMAT_PRESETS[format_key]
+            low_memory = resolve_low_memory_flag(low_memory_mode, input_path, log)
+            cmd = build_ctq_command(CTQ_EXE, input_path, output_path, format_key, exclude_arg,
+                                    extra_builtin_flag, convrot_groupsize, block_size, extra_args,
+                                    low_memory)
 
         log("Befehl: " + " ".join(cmd))
         set_status("running", progress=0, started_at=time.time())
@@ -931,8 +979,9 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
             return
 
         if ret != 0:
-            log(f"FEHLER: ctq wurde mit Fehlercode {ret} beendet.")
-            set_status("error", error=f"ctq wurde mit Fehlercode {ret} beendet -- siehe Log oben.")
+            program = "Die Umwandlung" if is_restore else "ctq"
+            log(f"FEHLER: {program} wurde mit Fehlercode {ret} beendet.")
+            set_status("error", error=f"{program} wurde mit Fehlercode {ret} beendet -- siehe Log oben.")
             return
 
         if fmt.get("marker_fix"):
@@ -1201,8 +1250,14 @@ def api_quantize():
                    p["extra_builtin_flag"], p["convrot_groupsize"], p["block_size"],
                    p["extra_args"], p["low_memory_mode"]),
     }
+    return _enqueue_job(job_id, job)
+
+
+def _enqueue_job(job_id, job):
+    """Puts a prepared job into the queue (shared by quantization and Back to bf16) and returns
+    the JSON response. Refuses a second active job that would write the same output file."""
     with QUEUE_COND:
-        out_norm = _norm_path(p["output_path"])
+        out_norm = _norm_path(job["output_path"])
         for other in JOBS.values():
             if other.get("status") in ACTIVE_STATES and _norm_path(other.get("output_path", "")) == out_norm:
                 return jsonify({"error": "Fuer diese Ausgabedatei gibt es schon einen Auftrag in der Warteschlange. "
@@ -1213,7 +1268,106 @@ def api_quantize():
         JOB_QUEUE.append(job_id)
         QUEUE_COND.notify()
     _ensure_queue_worker()
-    return jsonify({"job_id": job_id, "output_path": p["output_path"], "position": ahead + 1, "queued": ahead > 0})
+    return jsonify({"job_id": job_id, "output_path": job["output_path"], "position": ahead + 1, "queued": ahead > 0})
+
+
+# ---------------------------------------------------------------------------
+# Back to bf16: turns an INT8 (ConvRot) model made by ctq into a normal full-precision file, for
+# example to merge it with other models. The conversion itself lives in restore_bf16.py and runs
+# as a job in the same queue (one job at a time, log, progress and cancel work as for quantizing).
+# ---------------------------------------------------------------------------
+
+
+def suggest_restore_output(input_path, dtype="bf16"):
+    """Output name next to the input: 'x_int8_convrot.safetensors' -> 'x_bf16.safetensors', otherwise '_bf16' is appended."""
+    p = Path(input_path)
+    stem = p.stem
+    new = re.sub(r"(?i)(?<![A-Za-z0-9])int8(?:[_-]?convrot)?(?![A-Za-z0-9])", dtype, stem, count=1)
+    if new == stem:
+        new = f"{stem}_{dtype}"
+    return str(p.with_name(new + ".safetensors"))
+
+
+def _restore_unavailable():
+    return jsonify({"error": "restore_bf16.py fehlt neben quant_server.py -- bitte den kompletten Ordner kopieren."}), 500
+
+
+@app.route("/api/restore/inspect")
+def api_restore_inspect():
+    """What is in this file? Cheap (header and the small markers only): quantized layers, formats,
+    expected output sizes and whether the conversion supports it."""
+    if restore_bf16 is None:
+        return _restore_unavailable()
+    path = _clean_path(request.args.get("path", ""))
+    dtype = request.args.get("dtype", "bf16")
+    if dtype not in restore_bf16.OUTPUT_DTYPES:
+        dtype = "bf16"
+    if not path or not os.path.isfile(path):
+        return jsonify({"error": "Datei nicht gefunden."}), 400
+    try:
+        info = restore_bf16.scan(path)
+    except restore_bf16.RestoreError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Konnte Datei nicht lesen: {e}"}), 400
+    result = restore_bf16.summarize(info)
+    result["suggested_output"] = suggest_restore_output(path, dtype)
+    return jsonify(result)
+
+
+@app.route("/api/restore", methods=["POST"])
+def api_restore():
+    """Queues a Back-to-bf16 conversion."""
+    if restore_bf16 is None:
+        return _restore_unavailable()
+    data = request.get_json(force=True, silent=True) or {}
+    input_path = _clean_path(data.get("input_path"))
+    output_path = _clean_path(data.get("output_path"))
+    dtype = data.get("dtype") or "bf16"
+    device = data.get("device") or "cpu"
+    if dtype not in restore_bf16.OUTPUT_DTYPES:
+        return jsonify({"error": "Datentyp muss bf16, fp16 oder fp32 sein."}), 400
+    if device not in ("cpu", "cuda", "auto"):
+        return jsonify({"error": "Rechengeraet muss cpu, cuda oder auto sein."}), 400
+    if not input_path or not os.path.isfile(input_path):
+        return jsonify({"error": f"Eingabedatei nicht gefunden: {input_path}"}), 400
+    if not input_path.lower().endswith(".safetensors"):
+        return jsonify({"error": "Die Eingabedatei muss eine .safetensors-Datei sein."}), 400
+    if not output_path:
+        output_path = suggest_restore_output(input_path, dtype)
+    if not output_path.lower().endswith(".safetensors"):
+        return jsonify({"error": "Die Ausgabedatei muss auf .safetensors enden."}), 400
+    if _norm_path(output_path) == _norm_path(input_path):
+        return jsonify({"error": "Ausgabedatei darf nicht mit der Eingabedatei identisch sein."}), 400
+    out_dir = os.path.dirname(output_path)
+    if out_dir and not os.path.isdir(out_dir):
+        return jsonify({"error": f"Zielordner existiert nicht: {out_dir}"}), 400
+    if os.path.exists(output_path):
+        return jsonify({"error": f"Die Ausgabedatei gibt es schon: {output_path} -- waehle einen anderen Namen, "
+                                 "es wird nichts ueberschrieben."}), 409
+    try:
+        info = restore_bf16.scan(input_path)
+    except Exception as e:
+        return jsonify({"error": f"Konnte Datei nicht lesen: {e}"}), 400
+    if info["problems"]:
+        return jsonify({"error": "Die Datei kann nicht umgewandelt werden: " + "; ".join(info["problems"][:3])}), 400
+    if info["unsupported"]:
+        found = ", ".join(f"{name} ({n} Schichten)" for name, n in info["unsupported"].items())
+        return jsonify({"error": f"Diese Quantisierungsformate werden noch nicht unterstuetzt: {found}. "
+                                 "Unterstuetzt sind INT8 (mit und ohne ConvRot) und INT6 (W6A8)."}), 400
+    if not info["layers"]:
+        return jsonify({"error": "In der Datei wurden keine quantisierten Schichten gefunden."}), 400
+
+    job_id = str(uuid.uuid4())
+    job = {
+        "status": "queued", "log": [], "progress": 0,
+        "name": Path(input_path).name, "format": RESTORE_FORMAT_KEY,
+        "input_path": input_path, "output_path": output_path,
+        "created_at": time.time(),
+        "params": (input_path, output_path, RESTORE_FORMAT_KEY, None, None, 0, 0,
+                   {"dtype": dtype, "device": device}, "off"),
+    }
+    return _enqueue_job(job_id, job)
 
 
 @app.route("/api/preview", methods=["POST"])

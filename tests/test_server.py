@@ -63,6 +63,55 @@ class RamDetection(unittest.TestCase):
             os.unlink(f.name)
 
 
+def moss_image_keys(layers=2):
+    """Tensor names of MOSS-Image's transformer, as listed in the published weights' index file."""
+    keys = ["video_embedder.weight", "video_embedder.bias", "final_linear_video.weight", "final_norm_video.weight",
+            "video_head_modulation.weight", "video_head_modulation.bias", "shared_block_modulation.weight",
+            "shared_block_modulation.bias", "rope.bands", "text_embedder.proj.weight", "text_embedder.proj.bias",
+            "time_embedding.0.weight", "time_embedding.0.bias", "time_embedding.2.weight", "time_embedding.2.bias"]
+    for b in range(2):
+        keys += [f"text_embedder.blocks.{b}.{n}" for n in
+                 ("qkv.weight", "qkv.bias", "proj.weight", "proj.bias", "ffn_up.weight", "ffn_gate.weight",
+                  "ffn_down.weight", "norm1.weight", "norm2.weight", "q_norm.weight", "k_norm.weight")]
+    for i in range(layers):
+        keys += [f"layers.{i}.proj.{n}.weight" for n in ("q", "k", "v", "o", "ffn_up_gate", "ffn_down")]
+        keys += [f"layers.{i}.{n}.weight" for n in ("norm1", "norm2", "q_norm", "k_norm")]
+    return keys
+
+
+class ModelDetection(unittest.TestCase):
+    def test_moss_image_is_detected_with_and_without_a_key_prefix(self):
+        self.assertEqual(q.detect_model_type(moss_image_keys()), "moss_image_custom")
+        self.assertEqual(q.detect_model_type(["diffusion_model." + k for k in moss_image_keys()]), "moss_image_custom")
+
+    def test_moss_image_needs_the_complete_set_of_names(self):
+        keys = [k for k in moss_image_keys() if not k.startswith("shared_block_modulation")]
+        self.assertNotEqual(q.detect_model_type(keys), "moss_image_custom")
+        self.assertNotEqual(q.detect_model_type(["layers.0.proj.q.weight", "layers.0.proj.ffn_up_gate.weight"]),
+                            "moss_image_custom")
+
+    def test_other_models_are_not_taken_for_moss_image(self):
+        qwen = ["transformer_blocks.0.img_mlp.net.0.proj.weight", "txt_in.text_norm.weight", "modulation.1.weight"]
+        flux = ["double_blocks.0.img_mod.lin.weight", "double_blocks.0.txt_mod.lin.weight", "single_blocks.0.linear1.weight"]
+        self.assertEqual(q.detect_model_type(qwen), "qwen21_custom")
+        self.assertEqual(q.detect_model_type(flux), "flux1_custom")
+
+    def test_moss_image_preset_protects_the_edges_and_quantizes_the_blocks(self):
+        import re
+        preset = q.EXCLUDE_PRESETS["moss_image_custom"]
+        self.assertEqual(preset["kind"], "regex")
+        self.assertFalse(preset["verified"])
+        protected = [k for k in moss_image_keys(layers=42) if re.search(preset["value"], k)]
+        quantized = [k for k in moss_image_keys(layers=42) if k.endswith(".weight") and k.startswith("layers.")
+                     and ".proj." in k and not re.search(preset["value"], k)]
+        self.assertEqual(len(quantized), 42 * 6)  # q, k, v, o, ffn_up_gate, ffn_down of every block
+        for name in ("video_embedder.weight", "final_linear_video.weight", "time_embedding.0.weight",
+                     "shared_block_modulation.weight", "video_head_modulation.weight",
+                     "text_embedder.blocks.1.qkv.weight", "text_embedder.proj.weight"):
+            self.assertIn(name, protected)
+        self.assertFalse(any(k.startswith("layers.") for k in protected))
+
+
 class Paths(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

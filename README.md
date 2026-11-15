@@ -54,17 +54,21 @@ machine.
   and matches the tensor names against known architecture signatures. On a
   confident match, a colored pill shows the detected type and the correct
   layer-exclusion preset is applied automatically. Detects Anima, Flux.1,
-  Flux.2, SDXL/Illustrious, Qwen-Image 2.1 (single-stream), ctq's older
+  Flux.2, SDXL/Illustrious, Qwen-Image 2.1 (single-stream), MOSS-Image
+  (Base and SFT), ctq's older
   Qwen (dual-stream), Z-Image (+ Refiner), Wan, HunyuanVideo, Krea2, Boogu,
   Ideogram4, Radiance, NeRF (large/small), Chroma/distilled (large/small),
   MinimaxH3, LTXv2, Gemma4 and Qwen3-VL. Several signatures are verified
   against real model files, not just documentation. No confident match?
   No pill — you pick manually, same as before.
 - **Every layer-exclusion preset ctq knows about**, pulled straight from
-  your installed `ctq --help-filters`, plus three hand-verified community
-  regexes for architectures ctq doesn't have a built-in flag for
-  (SDXL/Illustrious, Flux.1, Qwen-Image 2.1 single-stream). Available both
-  as quick-select chips and in the dropdown — 27 presets in total.
+  your installed `ctq --help-filters`, plus four community regexes for
+  architectures ctq doesn't have a built-in flag for (SDXL/Illustrious,
+  Flux.1, Qwen-Image 2.1 single-stream, MOSS-Image). The MOSS-Image regex is
+  derived from the published tensor names and not yet tested with real
+  weights; its quantized file has to be made from a single `.safetensors`
+  (the project's `comfyui/export.py` merges the downloaded shards). Available
+  both as quick-select chips and in the dropdown — 28 presets in total.
 - **Six quantization formats**: INT8 ConvRot, INT8 Tensor-wise, INT8
   Block-wise, FP8, NVFP4 and MXFP8, with format-specific fields (ConvRot
   group size, block size) and inline documentation sourced from ctq's own
@@ -79,6 +83,26 @@ machine.
   only enables it when the input file is larger than 50% of currently
   available RAM (ctq's own recommendation); the measured values and
   decision are logged for every run.
+- **Back to bf16.** The "Back to bf16" section turns an INT8 (ConvRot or
+  plain INT8) model made by ctq, or an INT6 "W6A8" model (6-bit packed
+  weights with group scales), into a normal bf16, fp16 or fp32 file again,
+  for example to merge it with other models. It runs as a job in the same
+  queue (log, progress and cancel work as usual) and uses the same formula
+  ComfyUI uses to unpack such files, in fp32 without TF32. On the CPU the
+  result is bit-identical to ComfyUI's own; on the graphics card (the default,
+  CUDA, with an automatic fallback to the CPU when VRAM is short) about 0.1 %
+  of the values differ by one bf16 step because the sums run in a different
+  order, with no loss of accuracy. The conversion is mostly limited by disk
+  speed anyway. It checks every layer itself (quantizing the
+  result again must give exactly the same INT8 values), writes the file under
+  a temporary name and never overwrites an existing file. Layers that were not
+  quantized are copied byte for byte; the small per-layer attention hints
+  (`comfy_attention.config`) that quantized ComfyUI models carry are dropped,
+  because they are no weights and would trip up merge tools. The rounding of
+  the quantization cannot be undone: about 0.9 % deviation from the original
+  weights for INT8, about 2–3 % for INT6. Other quantization formats (4-bit
+  W4A8, FP8, NVFP4, MXFP8, block-wise INT8) are refused with a clear message
+  for now.
 - **Persistent, per-job logs.** Every run's full command and output is
   saved to `logs/` and stays there across server restarts, browsable from
   the UI.
@@ -137,8 +161,8 @@ machine.
 
 ## Quickstart
 
-1. Copy the whole folder (`quant_server.py`, `templates/`, `static/`,
-   `fonts/`, `icon.png`, `start_server.bat`) into (or next to) your ComfyUI
+1. Copy the whole folder (`quant_server.py`, `restore_bf16.py`, `templates/`,
+   `static/`, `fonts/`, `icon.png`, `start_server.bat`) into (or next to) your ComfyUI
    Python environment. Since version 1.3 the app consists of several files:
    `quant_server.py` needs the `templates` and `static` folders next to it.
 2. Double-click `start_server.bat`. First run: it locates or asks you to
@@ -178,6 +202,10 @@ python.exe quant_server.py
    minimize it. Start another model while one is running and it joins the
    queue. Use **Cancel** (in the job window, the bottom bar or the queue
    list) to stop a running job or remove a waiting one.
+6. **Back to bf16 (optional).** Open the "Back to bf16" section, pick a
+   quantized model from the list (or paste its full path), check the output
+   name and data type, and start the conversion. bf16 is the default; fp32
+   keeps the most precision but doubles the size.
 
 ## Configuration
 
