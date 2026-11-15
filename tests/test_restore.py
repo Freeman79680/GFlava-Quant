@@ -415,7 +415,10 @@ class StartedLikeComfyUIsEmbeddedPython(unittest.TestCase):
 class Naming(unittest.TestCase):
     def test_suggested_output_names(self):
         s = q.suggest_restore_output
-        self.assertEqual(Path(s(r"C:\m\GFlavaMOSSTurbo_int8_convrot.safetensors")).name, "GFlavaMOSSTurbo_bf16.safetensors")
+        # (a backslash path is only a path on Windows; elsewhere it would be one odd file name)
+        self.assertEqual(Path(s(os.path.join("m", "GFlavaMOSSTurbo_int8_convrot.safetensors"))).name, "GFlavaMOSSTurbo_bf16.safetensors")
+        if os.name == "nt":
+            self.assertEqual(Path(s(r"C:\m\GFlavaMOSSTurbo_int8_convrot.safetensors")).name, "GFlavaMOSSTurbo_bf16.safetensors")
         self.assertEqual(Path(s("/m/moss_image_sft_int8_convrot.safetensors", "fp16")).name, "moss_image_sft_fp16.safetensors")
         self.assertEqual(Path(s("/m/model-INT8.safetensors")).name, "model-bf16.safetensors")
         self.assertEqual(Path(s("/m/mossImageINT8INT6_mossImageINT8.safetensors")).name, "mossImageINT8INT6_mossImageINT8_bf16.safetensors")
