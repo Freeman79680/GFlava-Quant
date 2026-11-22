@@ -27,7 +27,9 @@ Then open in the browser: http://127.0.0.1:8877
 
 import atexit
 import datetime
+import importlib.util
 import json
+import logging
 import os
 import re
 import shutil
@@ -40,7 +42,13 @@ import threading
 import time
 import urllib.request
 import uuid
+import warnings
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+# torch warns about its optional "pynvml" package on every start. Nothing the user can or needs to act on,
+# so it is hidden here and (via PYTHONWARNINGS, see _quiet_env) in the ctq/restore processes we start.
+warnings.filterwarnings("ignore", message=".*pynvml.*", category=FutureWarning)
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
@@ -67,7 +75,7 @@ app = Flask(__name__, static_folder=None)
 # with a hint.
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 SCRIPT_DIR = Path(__file__).resolve().parent
 LOG_DIR = SCRIPT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -533,12 +541,13 @@ def scan_models():
 # ---------------------------------------------------------------------------
 
 
-def _get_ctq_constants():
+def _ctq_installed():
+    """Whether the convert_to_quant package is installed. find_spec only looks for the package and does NOT
+    import it: importing ctq pulls in PyTorch and took about 5 seconds at every server start."""
     try:
-        from convert_to_quant import constants as ctq_constants
-        return ctq_constants
-    except Exception:
-        return None
+        return importlib.util.find_spec("convert_to_quant") is not None
+    except (ImportError, ValueError):
+        return False
 
 
 def build_model_detection_registry():
@@ -570,7 +579,7 @@ def build_model_detection_registry():
          "forbid": []},
     ]
 
-    if _get_ctq_constants() is not None:
+    if _ctq_installed():
         # From here on: substrings 1:1 from ctq's own MODEL_FILTERS/*_LAYER_KEYNAMES
         # (see constants.py of the installed convert_to_quant version) --
         # not guessed by us, but what ctq itself considers characteristic for each
@@ -868,6 +877,14 @@ def build_restore_command(input_path, output_path, dtype, device):
             "--dtype", dtype, "--device", device]
 
 
+def _quiet_env(env):
+    """Environment for the Python programs we start (ctq, restore_bf16): hides the harmless pynvml
+    FutureWarning of torch so it does not clutter every job log."""
+    flt = "ignore:The pynvml package is deprecated:FutureWarning"
+    env["PYTHONWARNINGS"] = flt + ("," + env["PYTHONWARNINGS"] if env.get("PYTHONWARNINGS") else "")
+    return env
+
+
 def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_builtin_flag,
             convrot_groupsize, block_size, extra_args, low_memory_mode):
     """Runs one queued job. Normally that is a ctq quantization; with format_key RESTORE_FORMAT_KEY it
@@ -945,7 +962,7 @@ def run_job(job_id, input_path, output_path, format_key, exclude_arg, extra_buil
         log("Befehl: " + " ".join(cmd))
         set_status("running", progress=0, started_at=time.time())
 
-        env = os.environ.copy()
+        env = _quiet_env(os.environ.copy())
         env["PYTHONUNBUFFERED"] = "1"
 
         if cancel_requested():
@@ -1053,7 +1070,8 @@ def favicon():
 
 @app.route("/fonts/<path:filename>")
 def fonts(filename):
-    return send_from_directory(os.path.join(SCRIPT_DIR, "fonts"), filename, mimetype="font/woff2")
+    # Fonts never change: let the browser keep them for a month instead of asking again at every reload.
+    return send_from_directory(os.path.join(SCRIPT_DIR, "fonts"), filename, mimetype="font/woff2", max_age=2592000)
 
 
 @app.route("/api/config")
@@ -1090,7 +1108,7 @@ def api_ctq_help():
     if not CTQ_EXE:
         return jsonify({"error": "ctq wurde nicht gefunden."}), 400
     try:
-        result = subprocess.run([CTQ_EXE, "--help"], capture_output=True, text=True, timeout=20)
+        result = subprocess.run([CTQ_EXE, "--help"], capture_output=True, text=True, timeout=60, env=_quiet_env(os.environ.copy()))
         text = (result.stdout or "") + (result.stderr or "")
         if not text.strip():
             text = "(ctq --help hat keine Ausgabe geliefert)"
@@ -1933,7 +1951,10 @@ def api_system_check():
         fresh = (SYSTEM_CHECK_CACHE["checks"] is not None
                  and time.time() - SYSTEM_CHECK_CACHE["checked_at"] < SYSTEM_CHECK_MAX_AGE)
         if not (use_cache and fresh):
-            SYSTEM_CHECK_CACHE["checks"] = [check_app_update(), check_ctq_status(), check_int8fast_status()]
+            # The three checks wait mostly for network/subprocesses, so they run side by side.
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                futures = [pool.submit(f) for f in (check_app_update, check_ctq_status, check_int8fast_status)]
+                SYSTEM_CHECK_CACHE["checks"] = [f.result() for f in futures]
             SYSTEM_CHECK_CACHE["checked_at"] = time.time()
         return jsonify({"checks": SYSTEM_CHECK_CACHE["checks"],
                         "checked_at": SYSTEM_CHECK_CACHE["checked_at"],
@@ -2011,11 +2032,70 @@ def api_log_file(name):
     return Response(p.read_text(encoding="utf-8", errors="replace"), mimetype="text/plain; charset=utf-8")
 
 
+SERVER_HOST, SERVER_PORT = "127.0.0.1", 8877
+
+
+def _quiet_server_output():
+    """Hides the development-server warning and the access log line of every request (the page asks for the
+    status every second or two). Set GFLAVA_VERBOSE=1 to get them back, for example when debugging."""
+    if os.environ.get("GFLAVA_VERBOSE") == "1":
+        return
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+    try:
+        import flask.cli
+        flask.cli.show_server_banner = lambda *args, **kwargs: None
+    except Exception:
+        pass
+
+
+def _server_already_running():
+    import socket
+    try:
+        with socket.create_connection((SERVER_HOST, SERVER_PORT), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _open_browser_when_ready(url):
+    """Opens the browser as soon as the server accepts connections. Replaces the fixed two-second wait of the
+    launcher, which opened the page too early on a slow start (and left a useless error page in the browser)."""
+    def worker():
+        import socket
+        import webbrowser
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            try:
+                with socket.create_connection((SERVER_HOST, SERVER_PORT), timeout=0.5):
+                    break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            return
+        webbrowser.open(url)
+
+    threading.Thread(target=worker, name="open-browser", daemon=True).start()
+
+
 if __name__ == "__main__":
-    print("ctq gefunden unter:", CTQ_EXE or "NICHT GEFUNDEN")
+    url = f"http://{SERVER_HOST}:{SERVER_PORT}"
+    print(f"GFlava-Quant {APP_VERSION}")
+    print(f"  ctq:     {CTQ_EXE or 'NOT FOUND (see Settings in the browser)'}")
     if not TEMPLATE_PATH.is_file() or not (STATIC_DIR / "app.js").is_file():
-        print("WARNUNG: templates/index.html oder static/app.js fehlt -- bitte den kompletten Ordner kopieren.")
-    print("Oeffne im Browser: http://127.0.0.1:8877")
+        print("  WARNING: templates/index.html or static/app.js is missing -- please copy the complete folder.")
+    print(f"  Address: {url}   (stop with Ctrl+C or by closing this window)")
+    if _server_already_running():
+        # On Windows a second server can bind the same port without any error and then just hangs around,
+        # so look first. If GFlava-Quant is running already, the page of that server is what the user wants.
+        print("\nGFlava-Quant is already running (see its other window). Opening that one.")
+        if "--open-browser" in sys.argv:
+            import webbrowser
+            webbrowser.open(url)
+        time.sleep(2)
+        sys.exit(0)
+    _quiet_server_output()
+    if "--open-browser" in sys.argv:
+        _open_browser_when_ready(url)
     atexit.register(_terminate_running_jobs)
     for _sig in ("SIGTERM", "SIGHUP"):  # SIGHUP only exists on Linux/macOS
         if hasattr(signal, _sig):
@@ -2023,4 +2103,12 @@ if __name__ == "__main__":
     # threaded=True so that an open native folder/file dialog (blocks the request
     # until the user picks/cancels) doesn't freeze the whole server -- a quantization
     # job running in parallel should still be able to deliver status updates.
-    app.run(host="127.0.0.1", port=8877, debug=False, threaded=True)
+    try:
+        app.run(host=SERVER_HOST, port=SERVER_PORT, debug=False, threaded=True)
+    except OSError as e:
+        # Most often: a second start while the first server is still running. The browser (if requested above)
+        # then simply opens the page of the running server.
+        print(f"\nThe server could not start on port {SERVER_PORT}: {e}")
+        print("Is GFlava-Quant already running in another window? Then just use that one.")
+        time.sleep(3 if "--open-browser" in sys.argv else 0)
+        sys.exit(1)

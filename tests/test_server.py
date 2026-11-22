@@ -279,5 +279,40 @@ class Jobs(unittest.TestCase):
         self.assertFalse((self.tmp / "out_cancel.safetensors").exists(), "partial output was not removed")
 
 
+class Startup(unittest.TestCase):
+    """The start must stay fast and quiet (see _ctq_installed and _quiet_env)."""
+
+    def test_ctq_check_does_not_import_the_package(self):
+        # find_spec only looks for the package; importing ctq would load PyTorch (seconds at every start).
+        with mock.patch.dict(sys.modules):
+            sys.modules.pop("convert_to_quant", None)
+            q._ctq_installed()
+            self.assertNotIn("convert_to_quant", sys.modules)
+
+    def test_ctq_check_follows_the_installation(self):
+        with mock.patch("importlib.util.find_spec", return_value=None):
+            self.assertFalse(q._ctq_installed())
+        with mock.patch("importlib.util.find_spec", return_value=object()):
+            self.assertTrue(q._ctq_installed())
+
+    def test_quiet_env_hides_the_pynvml_warning_and_keeps_existing_filters(self):
+        env = q._quiet_env({})
+        self.assertIn("pynvml", env["PYTHONWARNINGS"])
+        env = q._quiet_env({"PYTHONWARNINGS": "error::UserWarning"})
+        self.assertTrue(env["PYTHONWARNINGS"].endswith(",error::UserWarning"))
+        self.assertIn("pynvml", env["PYTHONWARNINGS"])
+
+    def test_detects_a_running_server(self):
+        import socket
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            s.listen(1)
+            port = s.getsockname()[1]
+            with mock.patch.object(q, "SERVER_PORT", port):
+                self.assertTrue(q._server_already_running())
+        with mock.patch.object(q, "SERVER_PORT", port):
+            self.assertFalse(q._server_already_running())
+
+
 if __name__ == "__main__":
     unittest.main()

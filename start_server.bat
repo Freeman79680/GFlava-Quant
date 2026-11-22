@@ -63,7 +63,9 @@ if not exist "%SERVER_DIR%static\app.js" goto :MISSING_FILES
     echo SERVER_SCRIPT=%SERVER_SCRIPT%
 )
 
-"%PYTHON_EXE%" -c "import flask" >nul 2>nul
+rem The checks below only look whether a package is installed (find_spec) instead of importing it.
+rem "import convert_to_quant" alone loads PyTorch and took about 8 seconds on every start.
+"%PYTHON_EXE%" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('flask') else 1)" >nul 2>nul
 if errorlevel 1 (
     echo.
     echo ============================================================
@@ -96,7 +98,7 @@ if errorlevel 1 (
     )
 )
 
-"%PYTHON_EXE%" -c "import convert_to_quant" >nul 2>nul
+"%PYTHON_EXE%" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('convert_to_quant') else 1)" >nul 2>nul
 if errorlevel 1 (
     echo.
     echo ============================================================
@@ -128,17 +130,12 @@ if errorlevel 1 (
 )
 
 echo.
-echo Starting Model Quantization Server ...
+echo Starting GFlava-Quant ... the browser opens as soon as the server is ready.
 echo   Python: %PYTHON_EXE%
-echo   Script: %SERVER_SCRIPT%
-echo.
-echo This window shows the server log. To stop: close this window or press Ctrl+C.
 echo.
 
-rem Opens the browser automatically after a short delay, while the server starts.
-start "" cmd /c "timeout /t 2 >nul && start http://127.0.0.1:8877"
-
-"%PYTHON_EXE%" "%SERVER_SCRIPT%"
+rem --open-browser: the server itself opens the page once it accepts connections (no fixed waiting time).
+"%PYTHON_EXE%" "%SERVER_SCRIPT%" --open-browser
 
 echo.
 echo Server has stopped.

@@ -79,22 +79,10 @@ ask_install() {
 if ! "$PYTHON" -c "import flask" >/dev/null 2>&1; then
     ask_install flask flask "It runs the local web page you are about to open."
 fi
-if ! "$PYTHON" -m pip show convert_to_quant >/dev/null 2>&1; then
+if ! "$PYTHON" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('convert_to_quant') else 1)" >/dev/null 2>&1; then
     ask_install convert_to_quant convert_to_quant "It is the program that does the actual quantization."
 fi
 
-# Open the browser a moment after the server has started.
-open_browser() {
-    sleep 2
-    if command -v open >/dev/null 2>&1; then
-        open "$URL" >/dev/null 2>&1 || true            # macOS
-    elif command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$URL" >/dev/null 2>&1 || true        # Linux desktop
-    else
-        echo "Open $URL in your browser."
-    fi
-}
-open_browser &
-
 echo "Starting GFlava-Quant at $URL  (Ctrl+C stops the server)"
-exec "$PYTHON" "$SERVER_SCRIPT"
+# --open-browser: the server opens the page itself as soon as it accepts connections.
+exec "$PYTHON" "$SERVER_SCRIPT" --open-browser

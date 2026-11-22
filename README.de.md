@@ -65,7 +65,7 @@ auch auf einem fremden Rechner verständlich ist). Sie:
 4. prüft, ob `flask` und `convert_to_quant` (ctq) installiert sind. Falls
    nicht, erklärt sie jeweils kurz, wofür es gebraucht wird, und fragt, ob es
    installiert werden soll (Ja/Nein);
-5. startet den Server und öffnet nach 2 Sekunden automatisch den Browser
+5. startet den Server und öffnet automatisch den Browser, sobald der Server bereit ist,
    unter **http://127.0.0.1:8877**.
 
 Das Fenster mit dem laufenden Server einfach offen lassen, solange du die
